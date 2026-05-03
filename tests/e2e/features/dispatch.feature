@@ -17,7 +17,7 @@ Feature: Dispatch board
 
   Scenario: A call can be logged
     When I open the quick call modal
-    And I log a call with location "Main Stage" and complaint "Chest Pain"
+    And I log a call with location "Main Stage", complaint "Chest Pain" and priority "P1 - High"
     Then the call should appear in the call list
 
   Scenario: A team can be added to the dispatch board
@@ -27,7 +27,7 @@ Feature: Dispatch board
 
   Scenario: A call without a team assigned shows Pending status
     When I open the quick call modal
-    And I log a call with location "Parking Lot" and complaint "Laceration"
+    And I log a call with location "Parking Lot", complaint "Laceration" and priority "P1 - High"
     Then the call should appear in the call list
     And I should see the text "Pending"
 
@@ -65,9 +65,9 @@ Feature: Dispatch board
 
   Scenario: Multiple calls can be logged sequentially
     When I open the quick call modal
-    And I log a call with location "Main Stage" and complaint "Chest Pain"
+    And I log a call with location "Main Stage", complaint "Chest Pain" and priority "P1 - High"
     And I open the quick call modal
-    And I log a call with location "VIP Area" and complaint "Allergic Reaction"
+    And I log a call with location "VIP Area", complaint "Allergic Reaction" and priority "P1 - High"
     Then I should see the text "Main Stage"
     And I should see the text "VIP Area"
 
@@ -111,9 +111,9 @@ Feature: Dispatch board
 
   Scenario: Total Calls counter reflects the number of logged calls
     When I open the quick call modal
-    And I log a call with location "Stage Left" and complaint "Sprain"
+    And I log a call with location "Stage Left", complaint "Sprain" and priority "P1 - High"
     And I open the quick call modal
-    And I log a call with location "Stage Right" and complaint "Headache"
+    And I log a call with location "Stage Right", complaint "Headache" and priority "P1 - High"
     Then I should see the text "Total Calls: 2"
 
   Scenario: End event Continue button is disabled until a choice is selected

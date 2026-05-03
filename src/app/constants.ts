@@ -1,0 +1,1 @@
+export const CULTURE_FALLBACK = "fr-CA";

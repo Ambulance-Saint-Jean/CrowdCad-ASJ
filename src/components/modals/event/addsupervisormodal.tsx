@@ -28,7 +28,7 @@ type Props = {
   memberCert: string;
   setMemberCert: (v: string) => void;
 
-  roles: Role[];
+  roles: Role[] | null;
 };
 
 export default function AddSupervisorModal({
@@ -130,7 +130,7 @@ export default function AddSupervisorModal({
                 aria-label="Certification"
                 isRequired
               >
-                {roles.map((role) => (
+                {(roles ?? []).map((role) => (
                   <SelectItem key={role.name} aria-label={role.fullName} textValue={role.fullName}>
                     {role.name}
                   </SelectItem>

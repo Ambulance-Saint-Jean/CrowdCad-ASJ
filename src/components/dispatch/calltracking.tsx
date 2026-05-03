@@ -1,19 +1,21 @@
 // components/calltracking.tsx
 'use client';
 
-import React, {} from 'react';
-import { 
-  Button, 
-  Chip, 
-  Dropdown, 
-  DropdownTrigger, 
-  DropdownMenu, 
+import React, { Key } from 'react';
+import {
+  Button,
+  Chip,
+  Dropdown,
+  DropdownTrigger,
+  DropdownMenu,
   DropdownItem,
   Textarea,
-  ScrollShadow
+  ScrollShadow,
+  Tooltip,
+  Spinner
 } from '@heroui/react';
-import { Plus, MoreVertical } from "lucide-react";
-import type { Event, Call, EquipmentStatus, Supervisor, Staff, Equipment } from '@/app/types';
+import { Plus, MoreVertical, ArrowUp, ArrowDown } from "lucide-react";
+import { Event, Call, EquipmentStatus, Supervisor, Staff, Equipment, LogEntry, Priority } from '@/app/types';
 
 import {
   Dropdownmenu,
@@ -24,6 +26,8 @@ import {
   DropdownMenuSubTrigger,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import CriticalPriorityBanner from '../modals/event/criticalprioritybanner';
+import ColorChip from '@/components/modals/event/colorchip';
 
 // Define EditableCallField type locally
 type EditableCallField = keyof Call | 'ageSex';
@@ -47,7 +51,6 @@ interface CallTrackingTableProps {
   handleAgeSexBlur: (callId: string) => Promise<void>;
   handleRowClick: (e: React.MouseEvent, callId: string) => void;
   handleMarkDuplicate: (callId: string) => void;
-  handleTogglePriorityFromMenu: (callId: string) => void;
   handleDeleteCall: (callId: string) => void;
   handleTeamStatusChange: (callId: string, team: string, newStatus: string) => void;
   handleRemoveTeamFromCall: (callId: string, team: string) => Promise<void>;
@@ -55,18 +58,13 @@ interface CallTrackingTableProps {
   getCallRowClass: (call: Call) => string;
   computeCallStatus: (call: Call) => string;
   formatAgeSex: (age?: string | number, gender?: string) => string;
-  TableColGroup: React.ComponentType;
   PortalDropdown: React.ComponentType<unknown>;
+  priorities: Priority[]
 }
 
 interface DetachedTeam {
   team: string;
   reason: string;
-}
-
-interface LogEntry {
-  timestamp: number;
-  message: string;
 }
 
 export const CallTrackingTable: React.FC<CallTrackingTableProps> = ({
@@ -88,7 +86,6 @@ export const CallTrackingTable: React.FC<CallTrackingTableProps> = ({
   handleAgeSexBlur,
   handleRowClick,
   handleMarkDuplicate,
-  handleTogglePriorityFromMenu,
   handleDeleteCall,
   handleTeamStatusChange,
   handleRemoveTeamFromCall,
@@ -96,14 +93,16 @@ export const CallTrackingTable: React.FC<CallTrackingTableProps> = ({
   getCallRowClass,
   computeCallStatus,
   formatAgeSex,
-  TableColGroup,
+  priorities
 }) => {
-  // const ButtonRefs = useRef<Record<string, HTMLElement | null>>({});
   // Persistent local state for notes/log text per call — never goes null to prevent flicker
   const [notesTexts, setNotesTexts] = React.useState<Record<string, string>>({});
   const notesFocusedRef = React.useRef<string | null>(null);
   const [logTexts, setLogTexts] = React.useState<Record<string, string>>({});
   const logFocusedRef = React.useRef<string | null>(null);
+
+  const [isPriorityUpdating, setIsPriorityUpdating] = React.useState<Record<string, boolean>>({});
+  const [sortPriorityDirectionAsc, setSortPriorityDirectionAsc] = React.useState<boolean>(false)
 
   // Sync notes from props when not focused
   React.useEffect(() => {
@@ -172,6 +171,30 @@ export const CallTrackingTable: React.FC<CallTrackingTableProps> = ({
     if (changed) setPendingValues(newPending);
   }, [event?.calls, pendingValues, formatAgeSex]);
 
+  const updatePriority = async (key: Key, call: Call) => {
+    if (call.priority.id == key) {
+      return
+    }
+
+    setIsPriorityUpdating({ [call.id]: true })
+    const updatedCalls = event.calls.map((c: Call) => {
+      if (c.id !== call.id) return c;
+
+      const newPriority: Priority = priorities?.find(p => p.id == key) || c.priority
+
+      const callLogEntry = new LogEntry(`Priority moved from '${c.priority.shortName()}' to '${newPriority.shortName()}'`)
+
+      return {
+        ...c,
+        priority: newPriority,
+        log: [...(c.log || []), callLogEntry]
+      } as Call;
+    });
+
+    await updateEvent({ calls: updatedCalls });
+    setIsPriorityUpdating({ [call.id]: false })
+  }
+
 
   return (
     <div className="col-span-2 space-y-4 text-black">
@@ -193,12 +216,29 @@ export const CallTrackingTable: React.FC<CallTrackingTableProps> = ({
             </Button>
           </div>
         </div>
-        
+
         <div className="overflow-x-auto">
           <table className="min-w-[870px] w-full text-[14px] sm:text-[15px] text-surface-light table-fixed border-separate border-spacing-0">
-            <TableColGroup />
+            {/* <TableColGroup /> */}
             <thead>
               <tr className="border-b border-surface-liner">
+                <th className="px-3 py-2.5 text-left text-surface-faint w-24">
+                  <div className="flex items-center gap-1">
+                    Priority
+                    <button
+                      onClick={async () => {
+                        setSortPriorityDirectionAsc(!sortPriorityDirectionAsc)
+                      }}
+                      className="text-surface-faint hover:text-foreground transition-colors"
+                    >
+                      {sortPriorityDirectionAsc ?
+                        <ArrowUp size={14} />
+                        :
+                        <ArrowDown size={14} />
+                      }
+                    </button>
+                  </div>
+                </th>
                 <th className="px-3 py-2.5 text-left text-surface-faint w-16">Call #</th>
                 <th className="px-3 py-2.5 text-left text-surface-faint w-40">Chief Complaint</th>
                 <th className="px-3 py-2.5 text-left text-surface-faint w-16">A/S</th>
@@ -211,26 +251,55 @@ export const CallTrackingTable: React.FC<CallTrackingTableProps> = ({
 
             <tbody className="[&>tr>td]:border-b [&>tr>td]:border-surface-liner">
               {[
-                // Active calls first
-                ...event.calls
-                  .filter((call: Call) => !["Delivered", "Refusal", "NMM", "Rolled", "Resolved", "Unable to Locate"].includes(call.status))
-                  .sort((a: Call, b: Call) => parseInt(a.id) - parseInt(b.id)),
-                // Show resolved calls when showResolvedCalls is true
-                ...(showResolvedCalls
-                  ? event.calls
-                      .filter((c: Call) => ["Delivered", "Refusal", "NMM", "Rolled", "Resolved", "Unable to Locate"].includes(c.status))
-                      .sort((a: Call, b: Call) => parseInt(a.id) - parseInt(b.id))
-                  : [])
-              ].map((call: Call) => {
-                const pendingForCall = pendingValues[call.id] || {};
-                return (
-                <React.Fragment key={call.id}>
-                  <tr
-                    className={`cursor-pointer min-h-3.25rem ${getCallRowClass(call)} transition-colors`}
-                    onClick={(e) => handleRowClick(e, call.id)}
-                  >
+                ...event.sortCallsByPriority(sortPriorityDirectionAsc).calls.filter((call: Call) => !["Delivered", "Refusal", "NMM", "Rolled", "Resolved", "Unable to Locate"].includes(call.status)),
+                ...(showResolvedCalls ? event.sortCallsByPriority(sortPriorityDirectionAsc).calls.filter((c: Call) => ["Delivered", "Refusal", "NMM", "Rolled", "Resolved", "Unable to Locate"].includes(c.status)) : [])
+              ]
+                .map((call: Call) => {
+                  const pendingForCall = pendingValues[call.id] || {};
+                  return (
+                    <React.Fragment key={call.id}>
+                      <tr
+                        className={`cursor-pointer min-h-3.25rem ${getCallRowClass(call)} transition-colors`}
+                        onClick={(e) => handleRowClick(e, call.id)}
+                      >
+
+                        {/* Priority - Using HeroUI Dropdown */}
+                        <td className="px-3 py-2.5" onClick={e => e.stopPropagation()}>
+                          <Dropdown>
+                            <Tooltip content={call.priority.toString()} placement="left">
+                              <span>
+                                <DropdownTrigger>
+                                  <Button
+                                    size="sm"
+                                    variant="flat"
+                                    className="min-w-0 h-7 px-2 text-xs justify-start bg-surface-liner hover:bg-surface-muted"
+                                    isLoading={isPriorityUpdating[call.id]}
+                                    spinner={<Spinner size="sm" color="current" />}
+                                  >
+                                    <ColorChip color={call.priority.color} />{call.priority.shortName()}
+                                  </Button>
+                                </DropdownTrigger>
+                              </span>
+                            </Tooltip>
+                            <DropdownMenu
+                              onAction={async (key: Key) => updatePriority(key, call)}
+                              items={priorities ?? []}
+                            >
+                              {
+                                (priority) => (
+                                  <DropdownItem key={priority.id} startContent={ColorChip({ color: priority.color })}>
+                                    {
+                                      priority.toString()
+                                    }
+                                  </DropdownItem>
+                                )
+                              }
+                            </DropdownMenu>
+                          </Dropdown>
+                        </td>
+
                         <td className="px-3 py-2.5">{callDisplayNumberMap.get(call.id)}</td>
-                        
+
                         {/* Chief Complaint */}
                         <td
                           className="px-3 py-2.5 truncate"
@@ -255,9 +324,7 @@ export const CallTrackingTable: React.FC<CallTrackingTableProps> = ({
                                 }));
                                 try {
                                   await handleCellBlur(call.id, 'chiefComplaint');
-                                } catch (err) {
-                                  // ignore - pending will be cleared by effect if updated
-                                }
+                                } catch { }
                               }}
                               onKeyDown={(e) => {
                                 if (e.key === 'Enter') {
@@ -279,7 +346,7 @@ export const CallTrackingTable: React.FC<CallTrackingTableProps> = ({
                               : (call.chiefComplaint ? call.chiefComplaint : <span className="text-surface-light whitespace-nowrap">[Edit]</span>))
                           )}
                         </td>
-                        
+
                         {/* Age/Sex */}
                         <td
                           className="px-3 py-2.5"
@@ -302,7 +369,7 @@ export const CallTrackingTable: React.FC<CallTrackingTableProps> = ({
                                 }));
                                 try {
                                   await handleAgeSexBlur(call.id);
-                                } catch (err) {}
+                                } catch { }
                               }}
                               onFocus={(e) => {
                                 // Clear [Edit] placeholder on focus
@@ -321,7 +388,7 @@ export const CallTrackingTable: React.FC<CallTrackingTableProps> = ({
                                   });
                                 }
                               }}
-                             className="w-full bg-transparent text-surface-light px-0 py-0 border-0 outline-none focus:outline-none focus:ring-0 focus-visible:outline-none"
+                              className="w-full bg-transparent text-surface-light px-0 py-0 border-0 outline-none focus:outline-none focus:ring-0 focus-visible:outline-none"
                             />
                           ) : (
                             <span className="truncate">
@@ -335,10 +402,10 @@ export const CallTrackingTable: React.FC<CallTrackingTableProps> = ({
                             </span>
                           )}
                         </td>
-                        
+
                         {/* Status */}
                         <td className="px-3 py-2.5">{computeCallStatus(call)}</td>
-                        
+
                         {/* Location */}
                         <td className="px-3 py-2.5" onClick={() => handleCellClick(call.id, 'location', call.location)}>
                           {editingCell?.callId === call.id && editingCell.field === 'location' ? (
@@ -365,17 +432,17 @@ export const CallTrackingTable: React.FC<CallTrackingTableProps> = ({
                             call.location || <span className="text-surface-light whitespace-nowrap">[Edit]</span>
                           )}
                         </td>
-                        
+
                         {/* Team - Updated with larger Chips and shadcn dropdown */}
                         <td className="px-3 py-2.5 relative z-0">
                           <div className="relative z-0 flex flex-wrap items-center gap-2">
                             {/* Active assigned teams - Larger chips with centered dropdown */}
-                            {(Array.isArray(call.assignedTeam) ? call.assignedTeam : []).map((team: string) => {
+                            {(Array.isArray(call.assignedTeams) ? call.assignedTeams : []).map((team: string) => {
                               const isEquipmentOnlyTeam = call.equipmentTeams?.includes(team);
                               const statusOptions = isEquipmentOnlyTeam
                                 ? ['En Route Eq', 'Assisting', 'Delivered Eq',]
                                 : ['En Route', 'On Scene', 'Unable to Locate', 'Transporting', 'Rolled from Scene', 'Delivered', 'Refusal', 'NMM', 'Detached'];
-                           
+
                               return (
                                 <Chip
                                   key={team}
@@ -410,7 +477,7 @@ export const CallTrackingTable: React.FC<CallTrackingTableProps> = ({
                                 </Chip>
                               );
                             })}
-                            
+
                             {/* Detached teams */}
                             {call.detachedTeams?.map((detachedTeam: DetachedTeam) => (
                               <Chip
@@ -428,7 +495,7 @@ export const CallTrackingTable: React.FC<CallTrackingTableProps> = ({
                                 </span>
                               </Chip>
                             ))}
-                            
+
                             {/* Add Team Button with shadcn DropdownMenu */}
                             <Dropdownmenu>
                               <DropdownMenuTrigger asChild>
@@ -443,7 +510,7 @@ export const CallTrackingTable: React.FC<CallTrackingTableProps> = ({
                                 </Button>
                               </DropdownMenuTrigger>
                               <DropdownMenuContent className="bg-surface-deep border-surface-liner text-surface-light">
-                                
+
                                 {/* Add Team Submenu */}
                                 <DropdownMenuSub>
                                   <DropdownMenuSubTrigger className="hover:bg-surface-liner focus:bg-surface-liner cursor-pointer">
@@ -452,25 +519,25 @@ export const CallTrackingTable: React.FC<CallTrackingTableProps> = ({
                                   <DropdownMenuSubContent className="bg-surface-deep border-surface-liner">
                                     {(() => {
                                       const allTeams = event.staff ? event.staff.map(s => s.team) : [];
-                                      
+
                                       // Filter teams: must NOT be assigned to active calls, and must be Available/In Clinic/On Break
                                       const activeTeams = allTeams.filter(teamName => {
                                         const teamStaff = event.staff?.find(s => s.team === teamName);
-                                        const isAssignedToActiveCall = event.calls?.some((c: Call) => 
-                                          c.assignedTeam?.includes(teamName) && 
+                                        const isAssignedToActiveCall = event.calls?.some((c: Call) =>
+                                          c.assignedTeams?.includes(teamName) &&
                                           !['Resolved', 'Delivered', 'Refusal', 'NMM', 'Rolled'].includes(c.status)
                                         );
                                         return !isAssignedToActiveCall && teamStaff?.status === 'Available';
                                       });
-                                      
+
                                       const inactiveTeams = allTeams.filter(teamName => {
                                         const teamStaff = event.staff?.find(s => s.team === teamName);
-                                        const isAssignedToActiveCall = event.calls?.some((c: Call) => 
-                                          c.assignedTeam?.includes(teamName) && 
+                                        const isAssignedToActiveCall = event.calls?.some((c: Call) =>
+                                          c.assignedTeams?.includes(teamName) &&
                                           !['Resolved', 'Delivered', 'Refusal', 'NMM', 'Rolled'].includes(c.status)
                                         );
                                         return !isAssignedToActiveCall && ['In Clinic', 'On Break'].includes(teamStaff?.status || '');
-                                      });                                     
+                                      });
                                       return [
                                         ...activeTeams.map(team => (
                                           <DropdownMenuItem
@@ -503,9 +570,9 @@ export const CallTrackingTable: React.FC<CallTrackingTableProps> = ({
                                   <DropdownMenuSubContent className="bg-surface-deep border-surface-liner">
                                     {event.supervisor
                                       ?.filter((supervisor: Supervisor) => {
-                                        const notAssignedToThisCall = !call.assignedTeam?.includes(supervisor.team);
-                                        const notAssignedToAnyActiveCall = !event.calls?.some((c: Call) => 
-                                          c.assignedTeam?.includes(supervisor.team) && 
+                                        const notAssignedToThisCall = !call.assignedTeams?.includes(supervisor.team);
+                                        const notAssignedToAnyActiveCall = !event.calls?.some((c: Call) =>
+                                          c.assignedTeams?.includes(supervisor.team) &&
                                           !['Resolved', 'Delivered', 'Refusal', 'NMM', 'Rolled'].includes(c.status)
                                         );
                                         const hasValidStatus = ['Available', 'In Clinic', 'On Break'].includes(supervisor.status);
@@ -534,20 +601,20 @@ export const CallTrackingTable: React.FC<CallTrackingTableProps> = ({
 
                                               const updatedCall = {
                                                 ...call,
-                                                assignedTeam: [...(call.assignedTeam || []), supervisor.team],
-                                                status: call.assignedTeam?.length ? call.status : 'Assigned',
+                                                assignedTeam: [...(call.assignedTeams || []), supervisor.team],
+                                                status: call.assignedTeams?.length ? call.status : 'Assigned',
                                                 log: [...(call.log || []), callLogEntry]
                                               };
 
                                               const updatedSupervisor = event.supervisor?.map((s: Supervisor) =>
                                                 s.team === supervisor.team
                                                   ? {
-                                                      ...s,
-                                                      status: 'En Route',
-                                                      location: call.location,
-                                                      originalPost: s.location || 'Unknown',
-                                                      log: [...(s.log || []), teamLogEntry]
-                                                    }
+                                                    ...s,
+                                                    status: 'En Route',
+                                                    location: call.location,
+                                                    originalPost: s.location || 'Unknown',
+                                                    log: [...(s.log || []), teamLogEntry]
+                                                  }
                                                   : s
                                               );
 
@@ -564,18 +631,18 @@ export const CallTrackingTable: React.FC<CallTrackingTableProps> = ({
                                         );
                                       })}
                                     {(!event.supervisor || event.supervisor.filter((supervisor: Supervisor) => {
-                                      const notAssignedToThisCall = !call.assignedTeam?.includes(supervisor.team);
+                                      const notAssignedToThisCall = !call.assignedTeams?.includes(supervisor.team);
                                       const isAvailable = supervisor.status === 'Available' ||
-                                        !event.calls?.some((c: Call) => 
-                                          c.assignedTeam?.includes(supervisor.team) && 
+                                        !event.calls?.some((c: Call) =>
+                                          c.assignedTeams?.includes(supervisor.team) &&
                                           !['Resolved', 'Delivered', 'Refusal', 'NMM', 'Rolled'].includes(c.status)
                                         );
                                       return notAssignedToThisCall && isAvailable;
                                     }).length === 0) && (
-                                      <DropdownMenuItem disabled className="text-surface-light/50">
-                                        No supervisors available
-                                      </DropdownMenuItem>
-                                    )}
+                                        <DropdownMenuItem disabled className="text-surface-light/50">
+                                          No supervisors available
+                                        </DropdownMenuItem>
+                                      )}
                                   </DropdownMenuSubContent>
                                 </DropdownMenuSub>
 
@@ -587,199 +654,48 @@ export const CallTrackingTable: React.FC<CallTrackingTableProps> = ({
                                   <DropdownMenuSubContent className="bg-surface-deep border-surface-liner">
                                     {(() => {
                                       // Filter available and in clinic equipment separately
+                                      // const availableEquipment = (event.eventEquipment || [])
+                                      //   .filter((eq: Equipment) => eq.status === 'Available' || !eq.assignedTeam);
                                       const availableEquipment = (event.eventEquipment || [])
-                                        .filter((eq: Equipment) => eq.status === 'Available' || !eq.assignedTeam);
-                                      
+                                        .filter((eq: Equipment) =>
+                                          (eq.status === 'Available' || !eq.assignedTeam) && eq.status !== 'In Clinic' // exclude anything already in inClinic
+                                        );
+
                                       const inClinicEquipment = (event.eventEquipment || [])
                                         .filter((eq: Equipment) => eq.status === 'In Clinic');
-                                      
+
                                       return [
                                         // Available equipment (no highlighting)
                                         ...availableEquipment.map((equipment: Equipment) => (
-                                        <DropdownMenuSub key={equipment.id}>
-                                          <DropdownMenuSubTrigger className="text-surface-light hover:bg-surface-liner focus:bg-surface-liner cursor-pointer">
-                                            {equipment.name}
-                                          </DropdownMenuSubTrigger>
-                                          <DropdownMenuSubContent className="bg-surface-deep border-surface-liner">
-                                            {/* Available TEAMS and INACTIVE TEAMS */}
-                                            {(() => {
-                                              const availableTeams = event.staff.filter((team: Staff) => {
-                                                const notAssignedToThisCall = !call.assignedTeam?.includes(team.team);
-                                                const notAssignedToAnyActiveCall = !event.calls?.some((c: Call) => 
-                                                  c.assignedTeam?.includes(team.team) && 
-                                                  !['Resolved', 'Delivered', 'Refusal', 'NMM', 'Rolled'].includes(c.status)
-                                                );
-                                                return notAssignedToThisCall && notAssignedToAnyActiveCall && team.status === 'Available';
-                                              });
-                                              
-                                              const inactiveTeams = event.staff.filter((team: Staff) => {
-                                                const notAssignedToThisCall = !call.assignedTeam?.includes(team.team);
-                                                const notAssignedToAnyActiveCall = !event.calls?.some((c: Call) => 
-                                                  c.assignedTeam?.includes(team.team) && 
-                                                  !['Resolved', 'Delivered', 'Refusal', 'NMM', 'Rolled'].includes(c.status)
-                                                );
-                                                return notAssignedToThisCall && notAssignedToAnyActiveCall && ['In Clinic', 'On Break'].includes(team.status);
-                                              });
-                                              
-                                              return [
-                                                ...availableTeams.map((team: Staff) => (
-                                                  <DropdownMenuItem
-                                                    key={`equip-team-${team.team}`}
-                                                    className="text-surface-light hover:bg-surface-liner focus:bg-surface-liner cursor-pointer"
-                                                    onClick={async () => {
-                                                      const now = new Date();
-                                                      const hhmm = now.getHours().toString().padStart(2, '0') + now.getMinutes().toString().padStart(2, '0');
+                                          <DropdownMenuSub key={equipment.id}>
+                                            <DropdownMenuSubTrigger className="text-surface-light hover:bg-surface-liner focus:bg-surface-liner cursor-pointer">
+                                              {equipment.name}
+                                            </DropdownMenuSubTrigger>
+                                            <DropdownMenuSubContent className="bg-surface-deep border-surface-liner">
+                                              {/* Available TEAMS and INACTIVE TEAMS */}
+                                              {(() => {
+                                                const availableTeams = event.staff.filter((team: Staff) => {
+                                                  const notAssignedToThisCall = !call.assignedTeams?.includes(team.team);
+                                                  const notAssignedToAnyActiveCall = !event.calls?.some((c: Call) =>
+                                                    c.assignedTeams?.includes(team.team) &&
+                                                    !['Resolved', 'Delivered', 'Refusal', 'NMM', 'Rolled'].includes(c.status)
+                                                  );
+                                                  return notAssignedToThisCall && notAssignedToAnyActiveCall && team.status === 'Available';
+                                                });
 
-                                                      const updatedEquipment = event.eventEquipment?.map((eq: Equipment) =>
-                                                        eq.id === equipment.id
-                                                          ? {
-                                                              ...eq,
-                                                              status: 'In Use' as EquipmentStatus,
-                                                              assignedTeam: team.team,
-                                                              location: call.location
-                                                            }
-                                                          : eq
-                                                      );
+                                                const inactiveTeams = event.staff.filter((team: Staff) => {
+                                                  const notAssignedToThisCall = !call.assignedTeams?.includes(team.team);
+                                                  const notAssignedToAnyActiveCall = !event.calls?.some((c: Call) =>
+                                                    c.assignedTeams?.includes(team.team) &&
+                                                    !['Resolved', 'Delivered', 'Refusal', 'NMM', 'Rolled'].includes(c.status)
+                                                  );
+                                                  return notAssignedToThisCall && notAssignedToAnyActiveCall && ['In Clinic', 'On Break'].includes(team.status);
+                                                });
 
-                                                      const callLogEntry = {
-                                                        timestamp: now.getTime(),
-                                                        message: `${hhmm} - ${equipment.name} assigned to ${team.team} for this call.`
-                                                      };
-
-                                                      const teamLogEntry = {
-                                                        timestamp: now.getTime(),
-                                                        message: `${hhmm} - responding to call #${callDisplayNumberMap.get(call.id)} with ${equipment.name}`
-                                                      };
-
-                                                      const updatedCall = {
-                                                        ...call,
-                                                          assignedTeam: [...(call.assignedTeam || []), team.team],
-                                                          equipment: [...(call.equipment || []), equipment.name],
-                                                          equipmentTeams: [...(call.equipmentTeams || []), team.team],
-                                                        status: 'Assigned',
-                                                        log: [...(call.log || []), callLogEntry]
-                                                      };
-
-                                                      const updatedStaff = event.staff.map((t: Staff) =>
-                                                        t.team === team.team
-                                                          ? {
-                                                              ...t,
-                                                              status: 'En Route Eq',
-                                                              location: call.location,
-                                                              originalPost: t.location || 'Unknown',
-                                                              log: [...(t.log || []), teamLogEntry]
-                                                            }
-                                                          : t
-                                                      );
-
-                                                      const updatedCalls = event.calls.map((c: Call) =>
-                                                        c.id === call.id ? updatedCall : c
-                                                      );
-
-                                                      await updateEvent({
-                                                        calls: updatedCalls,
-                                                        staff: updatedStaff,
-                                                        eventEquipment: updatedEquipment
-                                                      });
-                                                    }}
-                                                  >
-                                                    {team.team}
-                                                  </DropdownMenuItem>
-                                                )),
-                                                ...inactiveTeams.map((team: Staff) => (
-                                                  <DropdownMenuItem
-                                                    key={`equip-team-inactive-${team.team}`}
-                                                    className="text-surface-light hover:bg-surface-liner focus:bg-surface-liner cursor-pointer bg-status-blue/20"
-                                                    onClick={async () => {
-                                                      const now = new Date();
-                                                      const hhmm = now.getHours().toString().padStart(2, '0') + now.getMinutes().toString().padStart(2, '0');
-
-                                                      const updatedEquipment = event.eventEquipment?.map((eq: Equipment) =>
-                                                        eq.id === equipment.id
-                                                          ? {
-                                                              ...eq,
-                                                              status: `Call ${call.order}`,
-                                                              assignedTeam: team.team,
-                                                              location: team.team
-                                                            }
-                                                          : eq
-                                                      );
-
-                                                      const callLogEntry = {
-                                                        timestamp: now.getTime(),
-                                                        message: `${hhmm} - ${equipment.name} assigned to ${team.team} for this call.`
-                                                      };
-
-                                                      const teamLogEntry = {
-                                                        timestamp: now.getTime(),
-                                                        message: `${hhmm} - responding to call #${callDisplayNumberMap.get(call.id)} with ${equipment.name}`
-                                                      };
-
-                                                      const updatedCall = {
-                                                        ...call,
-                                                        assignedTeam: [...(call.assignedTeam || []), team.team],
-                                                        equipmentTeams: [...(call.equipmentTeams || []), team.team],
-                                                        status: 'Assigned',
-                                                        log: [...(call.log || []), callLogEntry]
-                                                      };
-
-                                                      const updatedStaff = event.staff.map((t: Staff) =>
-                                                        t.team === team.team
-                                                          ? {
-                                                              ...t,
-                                                              status: 'En Route Eq',
-                                                              location: call.location,
-                                                              originalPost: t.location || 'Unknown',
-                                                              log: [...(t.log || []), teamLogEntry]
-                                                            }
-                                                          : t
-                                                      );
-
-                                                      const updatedCalls = event.calls.map((c: Call) =>
-                                                        c.id === call.id ? updatedCall : c
-                                                      );
-
-                                                      await updateEvent({
-                                                        calls: updatedCalls,
-                                                        staff: updatedStaff,
-                                                        eventEquipment: updatedEquipment
-                                                      });
-                                                    }}
-                                                  >
-                                                    {team.team}
-                                                  </DropdownMenuItem>
-                                                ))
-                                              ];
-                                            })()}
-
-                                            {/* Available SUPERVISORS and INACTIVE SUPERVISORS */}
-                                            {(() => {
-                                              const availableSupervisors = event.supervisor?.filter((sup: Supervisor) => {
-                                                const notAssignedToThisCall = !call.assignedTeam?.includes(sup.team);
-                                                const notAssignedToAnyActiveCall = !event.calls?.some((c: Call) => 
-                                                  c.assignedTeam?.includes(sup.team) && 
-                                                  !['Resolved', 'Delivered', 'Refusal', 'NMM', 'Rolled'].includes(c.status)
-                                                );
-                                                return notAssignedToThisCall && notAssignedToAnyActiveCall && sup.status === 'Available';
-                                              }) || [];
-                                              
-                                              const inactiveSupervisors = event.supervisor?.filter((sup: Supervisor) => {
-                                                const notAssignedToThisCall = !call.assignedTeam?.includes(sup.team);
-                                                const notAssignedToAnyActiveCall = !event.calls?.some((c: Call) => 
-                                                  c.assignedTeam?.includes(sup.team) && 
-                                                  !['Resolved', 'Delivered', 'Refusal', 'NMM', 'Rolled'].includes(c.status)
-                                                );
-                                                return notAssignedToThisCall && notAssignedToAnyActiveCall && ['In Clinic', 'On Break'].includes(sup.status);
-                                              }) || [];
-                                              
-                                              return [
-                                                ...availableSupervisors.map((supervisor: Supervisor) => {
-                                                  const match = supervisor.member.match(/^(.+?)\s\[(.+?)\]/);
-                                                  const memberName = match ? match[1] : supervisor.member;
-                                                  
-                                                  return (
+                                                return [
+                                                  ...availableTeams.map((team: Staff) => (
                                                     <DropdownMenuItem
-                                                      key={`equip-supervisor-${supervisor.team}`}
+                                                      key={`equip-team-${team.team}`}
                                                       className="text-surface-light hover:bg-surface-liner focus:bg-surface-liner cursor-pointer"
                                                       onClick={async () => {
                                                         const now = new Date();
@@ -788,42 +704,43 @@ export const CallTrackingTable: React.FC<CallTrackingTableProps> = ({
                                                         const updatedEquipment = event.eventEquipment?.map((eq: Equipment) =>
                                                           eq.id === equipment.id
                                                             ? {
-                                                                ...eq,
-                                                                status: 'In Use' as EquipmentStatus,
-                                                                assignedTeam: supervisor.team,
-                                                                location: call.location
-                                                              }
+                                                              ...eq,
+                                                              status: 'In Use' as EquipmentStatus,
+                                                              assignedTeam: team.team,
+                                                              location: call.location
+                                                            }
                                                             : eq
                                                         );
 
                                                         const callLogEntry = {
                                                           timestamp: now.getTime(),
-                                                          message: `${hhmm} - ${equipment.name} assigned to Supervisor ${memberName} (${supervisor.team}) for this call.`
+                                                          message: `${hhmm} - ${equipment.name} assigned to ${team.team} for this call.`
                                                         };
 
                                                         const teamLogEntry = {
                                                           timestamp: now.getTime(),
-                                                          message: `${hhmm} - responding to call #${callDisplayNumberMap.get(call.id)} with ${equipment.name} (supervisor support)`
+                                                          message: `${hhmm} - responding to call #${callDisplayNumberMap.get(call.id)} with ${equipment.name}`
                                                         };
 
                                                         const updatedCall = {
                                                           ...call,
-                                                          assignedTeam: [...(call.assignedTeam || []), supervisor.team],
-                                                          equipmentTeams: [...(call.equipmentTeams || []), supervisor.team],
+                                                          assignedTeam: [...(call.assignedTeams || []), team.team],
+                                                          equipment: [...(call.equipment || []), equipment.name],
+                                                          equipmentTeams: [...(call.equipmentTeams || []), team.team],
                                                           status: 'Assigned',
                                                           log: [...(call.log || []), callLogEntry]
                                                         };
 
-                                                        const updatedSupervisor = event.supervisor?.map((s: Supervisor) =>
-                                                          s.team === supervisor.team
+                                                        const updatedStaff = event.staff.map((t: Staff) =>
+                                                          t.team === team.team
                                                             ? {
-                                                                ...s,
-                                                                status: 'En Route Eq',
-                                                                location: call.location,
-                                                                originalPost: s.location || 'Unknown',
-                                                                log: [...(s.log || []), teamLogEntry]
-                                                              }
-                                                            : s
+                                                              ...t,
+                                                              status: 'En Route Eq',
+                                                              location: call.location,
+                                                              originalPost: t.location || 'Unknown',
+                                                              log: [...(t.log || []), teamLogEntry]
+                                                            }
+                                                            : t
                                                         );
 
                                                         const updatedCalls = event.calls.map((c: Call) =>
@@ -832,22 +749,17 @@ export const CallTrackingTable: React.FC<CallTrackingTableProps> = ({
 
                                                         await updateEvent({
                                                           calls: updatedCalls,
-                                                          supervisor: updatedSupervisor,
+                                                          staff: updatedStaff,
                                                           eventEquipment: updatedEquipment
                                                         });
                                                       }}
                                                     >
-                                                      {supervisor.team}
+                                                      {team.team}
                                                     </DropdownMenuItem>
-                                                  );
-                                                }),
-                                                ...inactiveSupervisors.map((supervisor: Supervisor) => {
-                                                  const match = supervisor.member.match(/^(.+?)\s\[(.+?)\]/);
-                                                  const memberName = match ? match[1] : supervisor.member;
-                                                  
-                                                  return (
+                                                  )),
+                                                  ...inactiveTeams.map((team: Staff) => (
                                                     <DropdownMenuItem
-                                                      key={`equip-supervisor-inactive-${supervisor.team}`}
+                                                      key={`equip-team-inactive-${team.team}`}
                                                       className="text-surface-light hover:bg-surface-liner focus:bg-surface-liner cursor-pointer bg-status-blue/20"
                                                       onClick={async () => {
                                                         const now = new Date();
@@ -856,42 +768,42 @@ export const CallTrackingTable: React.FC<CallTrackingTableProps> = ({
                                                         const updatedEquipment = event.eventEquipment?.map((eq: Equipment) =>
                                                           eq.id === equipment.id
                                                             ? {
-                                                                ...eq,
-                                                                status: 'In Use' as EquipmentStatus,
-                                                                assignedTeam: supervisor.team,
-                                                                location: call.location
-                                                              }
+                                                              ...eq,
+                                                              status: `Call ${call.order}`,
+                                                              assignedTeam: team.team,
+                                                              location: team.team
+                                                            }
                                                             : eq
                                                         );
 
                                                         const callLogEntry = {
                                                           timestamp: now.getTime(),
-                                                          message: `${hhmm} - ${equipment.name} assigned to Supervisor ${memberName} (${supervisor.team}) for this call.`
+                                                          message: `${hhmm} - ${equipment.name} assigned to ${team.team} for this call.`
                                                         };
 
                                                         const teamLogEntry = {
                                                           timestamp: now.getTime(),
-                                                          message: `${hhmm} - responding to call #${callDisplayNumberMap.get(call.id)} with ${equipment.name} (supervisor support)`
+                                                          message: `${hhmm} - responding to call #${callDisplayNumberMap.get(call.id)} with ${equipment.name}`
                                                         };
 
                                                         const updatedCall = {
                                                           ...call,
-                                                          assignedTeam: [...(call.assignedTeam || []), supervisor.team],
-                                                          equipmentTeams: [...(call.equipmentTeams || []), supervisor.team],
+                                                          assignedTeam: [...(call.assignedTeams || []), team.team],
+                                                          equipmentTeams: [...(call.equipmentTeams || []), team.team],
                                                           status: 'Assigned',
                                                           log: [...(call.log || []), callLogEntry]
                                                         };
 
-                                                        const updatedSupervisor = event.supervisor?.map((s: Supervisor) =>
-                                                          s.team === supervisor.team
+                                                        const updatedStaff = event.staff.map((t: Staff) =>
+                                                          t.team === team.team
                                                             ? {
-                                                                ...s,
-                                                                status: 'En Route Eq',
-                                                                location: call.location,
-                                                                originalPost: s.location || 'Unknown',
-                                                                log: [...(s.log || []), teamLogEntry]
-                                                              }
-                                                            : s
+                                                              ...t,
+                                                              status: 'En Route Eq',
+                                                              location: call.location,
+                                                              originalPost: t.location || 'Unknown',
+                                                              log: [...(t.log || []), teamLogEntry]
+                                                            }
+                                                            : t
                                                         );
 
                                                         const updatedCalls = event.calls.map((c: Call) =>
@@ -900,206 +812,210 @@ export const CallTrackingTable: React.FC<CallTrackingTableProps> = ({
 
                                                         await updateEvent({
                                                           calls: updatedCalls,
-                                                          supervisor: updatedSupervisor,
+                                                          staff: updatedStaff,
                                                           eventEquipment: updatedEquipment
                                                         });
                                                       }}
                                                     >
-                                                      {supervisor.team}
+                                                      {team.team}
                                                     </DropdownMenuItem>
+                                                  ))
+                                                ];
+                                              })()}
+
+                                              {/* Available SUPERVISORS and INACTIVE SUPERVISORS */}
+                                              {(() => {
+                                                const availableSupervisors = event.supervisor?.filter((sup: Supervisor) => {
+                                                  const notAssignedToThisCall = !call.assignedTeams?.includes(sup.team);
+                                                  const notAssignedToAnyActiveCall = !event.calls?.some((c: Call) =>
+                                                    c.assignedTeams?.includes(sup.team) &&
+                                                    !['Resolved', 'Delivered', 'Refusal', 'NMM', 'Rolled'].includes(c.status)
                                                   );
-                                                })
-                                              ];
-                                            })()}
+                                                  return notAssignedToThisCall && notAssignedToAnyActiveCall && sup.status === 'Available';
+                                                }) || [];
+
+                                                const inactiveSupervisors = event.supervisor?.filter((sup: Supervisor) => {
+                                                  const notAssignedToThisCall = !call.assignedTeams?.includes(sup.team);
+                                                  const notAssignedToAnyActiveCall = !event.calls?.some((c: Call) =>
+                                                    c.assignedTeams?.includes(sup.team) &&
+                                                    !['Resolved', 'Delivered', 'Refusal', 'NMM', 'Rolled'].includes(c.status)
+                                                  );
+                                                  return notAssignedToThisCall && notAssignedToAnyActiveCall && ['In Clinic', 'On Break'].includes(sup.status);
+                                                }) || [];
+
+                                                return [
+                                                  ...availableSupervisors.map((supervisor: Supervisor) => {
+                                                    const match = supervisor.member.match(/^(.+?)\s\[(.+?)\]/);
+                                                    const memberName = match ? match[1] : supervisor.member;
+
+                                                    return (
+                                                      <DropdownMenuItem
+                                                        key={`equip-supervisor-${supervisor.team}`}
+                                                        className="text-surface-light hover:bg-surface-liner focus:bg-surface-liner cursor-pointer"
+                                                        onClick={async () => {
+                                                          const now = new Date();
+                                                          const hhmm = now.getHours().toString().padStart(2, '0') + now.getMinutes().toString().padStart(2, '0');
+
+                                                          const updatedEquipment = event.eventEquipment?.map((eq: Equipment) =>
+                                                            eq.id === equipment.id
+                                                              ? {
+                                                                ...eq,
+                                                                status: 'In Use' as EquipmentStatus,
+                                                                assignedTeam: supervisor.team,
+                                                                location: call.location
+                                                              }
+                                                              : eq
+                                                          );
+
+                                                          const callLogEntry = {
+                                                            timestamp: now.getTime(),
+                                                            message: `${hhmm} - ${equipment.name} assigned to Supervisor ${memberName} (${supervisor.team}) for this call.`
+                                                          };
+
+                                                          const teamLogEntry = {
+                                                            timestamp: now.getTime(),
+                                                            message: `${hhmm} - responding to call #${callDisplayNumberMap.get(call.id)} with ${equipment.name} (supervisor support)`
+                                                          };
+
+                                                          const updatedCall = {
+                                                            ...call,
+                                                            assignedTeam: [...(call.assignedTeams || []), supervisor.team],
+                                                            equipmentTeams: [...(call.equipmentTeams || []), supervisor.team],
+                                                            status: 'Assigned',
+                                                            log: [...(call.log || []), callLogEntry]
+                                                          };
+
+                                                          const updatedSupervisor = event.supervisor?.map((s: Supervisor) =>
+                                                            s.team === supervisor.team
+                                                              ? {
+                                                                ...s,
+                                                                status: 'En Route Eq',
+                                                                location: call.location,
+                                                                originalPost: s.location || 'Unknown',
+                                                                log: [...(s.log || []), teamLogEntry]
+                                                              }
+                                                              : s
+                                                          );
+
+                                                          const updatedCalls = event.calls.map((c: Call) =>
+                                                            c.id === call.id ? updatedCall : c
+                                                          );
+
+                                                          await updateEvent({
+                                                            calls: updatedCalls,
+                                                            supervisor: updatedSupervisor,
+                                                            eventEquipment: updatedEquipment
+                                                          });
+                                                        }}
+                                                      >
+                                                        {supervisor.team}
+                                                      </DropdownMenuItem>
+                                                    );
+                                                  }),
+                                                  ...inactiveSupervisors.map((supervisor: Supervisor) => {
+                                                    const match = supervisor.member.match(/^(.+?)\s\[(.+?)\]/);
+                                                    const memberName = match ? match[1] : supervisor.member;
+
+                                                    return (
+                                                      <DropdownMenuItem
+                                                        key={`equip-supervisor-inactive-${supervisor.team}`}
+                                                        className="text-surface-light hover:bg-surface-liner focus:bg-surface-liner cursor-pointer bg-status-blue/20"
+                                                        onClick={async () => {
+                                                          const now = new Date();
+                                                          const hhmm = now.getHours().toString().padStart(2, '0') + now.getMinutes().toString().padStart(2, '0');
+
+                                                          const updatedEquipment = event.eventEquipment?.map((eq: Equipment) =>
+                                                            eq.id === equipment.id
+                                                              ? {
+                                                                ...eq,
+                                                                status: 'In Use' as EquipmentStatus,
+                                                                assignedTeam: supervisor.team,
+                                                                location: call.location
+                                                              }
+                                                              : eq
+                                                          );
+
+                                                          const callLogEntry = {
+                                                            timestamp: now.getTime(),
+                                                            message: `${hhmm} - ${equipment.name} assigned to Supervisor ${memberName} (${supervisor.team}) for this call.`
+                                                          };
+
+                                                          const teamLogEntry = {
+                                                            timestamp: now.getTime(),
+                                                            message: `${hhmm} - responding to call #${callDisplayNumberMap.get(call.id)} with ${equipment.name} (supervisor support)`
+                                                          };
+
+                                                          const updatedCall = {
+                                                            ...call,
+                                                            assignedTeam: [...(call.assignedTeams || []), supervisor.team],
+                                                            equipmentTeams: [...(call.equipmentTeams || []), supervisor.team],
+                                                            status: 'Assigned',
+                                                            log: [...(call.log || []), callLogEntry]
+                                                          };
+
+                                                          const updatedSupervisor = event.supervisor?.map((s: Supervisor) =>
+                                                            s.team === supervisor.team
+                                                              ? {
+                                                                ...s,
+                                                                status: 'En Route Eq',
+                                                                location: call.location,
+                                                                originalPost: s.location || 'Unknown',
+                                                                log: [...(s.log || []), teamLogEntry]
+                                                              }
+                                                              : s
+                                                          );
+
+                                                          const updatedCalls = event.calls.map((c: Call) =>
+                                                            c.id === call.id ? updatedCall : c
+                                                          );
+
+                                                          await updateEvent({
+                                                            calls: updatedCalls,
+                                                            supervisor: updatedSupervisor,
+                                                            eventEquipment: updatedEquipment
+                                                          });
+                                                        }}
+                                                      >
+                                                        {supervisor.team}
+                                                      </DropdownMenuItem>
+                                                    );
+                                                  })
+                                                ];
+                                              })()}
                                             </DropdownMenuSubContent>
-                                            </DropdownMenuSub>
-                                            )),
+                                          </DropdownMenuSub>
+                                        )),
                                         // In Clinic equipment (blue highlighting)
                                         ...inClinicEquipment.map((equipment: Equipment) => (
-                                        <DropdownMenuSub key={equipment.id}>
-                                          <DropdownMenuSubTrigger className="text-surface-light hover:bg-surface-liner focus:bg-surface-liner cursor-pointer bg-status-blue/20">
-                                            {equipment.name}
-                                          </DropdownMenuSubTrigger>
-                                          <DropdownMenuSubContent className="bg-surface-deep border-surface-liner">
-                                            {/* Available TEAMS and INACTIVE TEAMS for In Clinic equipment */}
-                                            {(() => {
-                                              const availableTeams = event.staff.filter((team: Staff) => {
-                                                const notAssignedToThisCall = !call.assignedTeam?.includes(team.team);
-                                                const notAssignedToAnyActiveCall = !event.calls?.some((c: Call) => 
-                                                  c.assignedTeam?.includes(team.team) && 
-                                                  !['Resolved', 'Delivered', 'Refusal', 'NMM', 'Rolled'].includes(c.status)
-                                                );
-                                                return notAssignedToThisCall && notAssignedToAnyActiveCall && team.status === 'Available';
-                                              });
-                                              
-                                              const inactiveTeams = event.staff.filter((team: Staff) => {
-                                                const notAssignedToThisCall = !call.assignedTeam?.includes(team.team);
-                                                const notAssignedToAnyActiveCall = !event.calls?.some((c: Call) => 
-                                                  c.assignedTeam?.includes(team.team) && 
-                                                  !['Resolved', 'Delivered', 'Refusal', 'NMM', 'Rolled'].includes(c.status)
-                                                );
-                                                return notAssignedToThisCall && notAssignedToAnyActiveCall && ['In Clinic', 'On Break'].includes(team.status);
-                                              });
-                                              
-                                              return [
-                                                ...availableTeams.map((team: Staff) => (
-                                                  <DropdownMenuItem
-                                                    key={`equip-team-clinic-${team.team}`}
-                                                    className="text-surface-light hover:bg-surface-liner focus:bg-surface-liner cursor-pointer"
-                                                    onClick={async () => {
-                                                      const now = new Date();
-                                                      const hhmm = now.getHours().toString().padStart(2, '0') + now.getMinutes().toString().padStart(2, '0');
+                                          <DropdownMenuSub key={equipment.id}>
+                                            <DropdownMenuSubTrigger className="text-surface-light hover:bg-surface-liner focus:bg-surface-liner cursor-pointer bg-status-blue/20">
+                                              {equipment.name}
+                                            </DropdownMenuSubTrigger>
+                                            <DropdownMenuSubContent className="bg-surface-deep border-surface-liner">
+                                              {/* Available TEAMS and INACTIVE TEAMS for In Clinic equipment */}
+                                              {(() => {
+                                                const availableTeams = event.staff.filter((team: Staff) => {
+                                                  const notAssignedToThisCall = !call.assignedTeams?.includes(team.team);
+                                                  const notAssignedToAnyActiveCall = !event.calls?.some((c: Call) =>
+                                                    c.assignedTeams?.includes(team.team) &&
+                                                    !['Resolved', 'Delivered', 'Refusal', 'NMM', 'Rolled'].includes(c.status)
+                                                  );
+                                                  return notAssignedToThisCall && notAssignedToAnyActiveCall && team.status === 'Available';
+                                                });
 
-                                                      const updatedEquipment = event.eventEquipment?.map((eq: Equipment) =>
-                                                        eq.id === equipment.id
-                                                          ? {
-                                                              ...eq,
-                                                              status: 'In Use' as EquipmentStatus,
-                                                              assignedTeam: team.team,
-                                                              location: call.location
-                                                            }
-                                                          : eq
-                                                      );
+                                                const inactiveTeams = event.staff.filter((team: Staff) => {
+                                                  const notAssignedToThisCall = !call.assignedTeams?.includes(team.team);
+                                                  const notAssignedToAnyActiveCall = !event.calls?.some((c: Call) =>
+                                                    c.assignedTeams?.includes(team.team) &&
+                                                    !['Resolved', 'Delivered', 'Refusal', 'NMM', 'Rolled'].includes(c.status)
+                                                  );
+                                                  return notAssignedToThisCall && notAssignedToAnyActiveCall && ['In Clinic', 'On Break'].includes(team.status);
+                                                });
 
-                                                      const callLogEntry = {
-                                                        timestamp: now.getTime(),
-                                                        message: `${hhmm} - ${equipment.name} assigned to ${team.team} for this call.`
-                                                      };
-
-                                                      const teamLogEntry = {
-                                                        timestamp: now.getTime(),
-                                                        message: `${hhmm} - responding to call #${callDisplayNumberMap.get(call.id)} with ${equipment.name}`
-                                                      };
-
-                                                      const updatedCall = {
-                                                        ...call,
-                                                          assignedTeam: [...(call.assignedTeam || []), team.team],
-                                                          equipment: [...(call.equipment || []), equipment.name],
-                                                          equipmentTeams: [...(call.equipmentTeams || []), team.team],
-                                                        status: 'Assigned',
-                                                        log: [...(call.log || []), callLogEntry]
-                                                      };
-
-                                                      const updatedStaff = event.staff.map((t: Staff) =>
-                                                        t.team === team.team
-                                                          ? {
-                                                              ...t,
-                                                              status: 'En Route Eq',
-                                                              location: call.location,
-                                                              originalPost: t.location || 'Unknown',
-                                                              log: [...(t.log || []), teamLogEntry]
-                                                            }
-                                                          : t
-                                                      );
-
-                                                      const updatedCalls = event.calls.map((c: Call) =>
-                                                        c.id === call.id ? updatedCall : c
-                                                      );
-
-                                                      await updateEvent({
-                                                        calls: updatedCalls,
-                                                        staff: updatedStaff,
-                                                        eventEquipment: updatedEquipment
-                                                      });
-                                                    }}
-                                                  >
-                                                    {team.team}
-                                                  </DropdownMenuItem>
-                                                )),
-                                                ...inactiveTeams.map((team: Staff) => (
-                                                  <DropdownMenuItem
-                                                    key={`equip-team-inactive-clinic-${team.team}`}
-                                                    className="text-surface-light hover:bg-surface-liner focus:bg-surface-liner cursor-pointer bg-status-blue/20"
-                                                    onClick={async () => {
-                                                      const now = new Date();
-                                                      const hhmm = now.getHours().toString().padStart(2, '0') + now.getMinutes().toString().padStart(2, '0');
-
-                                                      const updatedEquipment = event.eventEquipment?.map((eq: Equipment) =>
-                                                        eq.id === equipment.id
-                                                          ? {
-                                                              ...eq,
-                                                              status: `Call ${call.order}`,
-                                                              assignedTeam: team.team,
-                                                              location: team.team
-                                                            }
-                                                          : eq
-                                                      );
-
-                                                      const callLogEntry = {
-                                                        timestamp: now.getTime(),
-                                                        message: `${hhmm} - ${equipment.name} assigned to ${team.team} for this call.`
-                                                      };
-
-                                                      const teamLogEntry = {
-                                                        timestamp: now.getTime(),
-                                                        message: `${hhmm} - responding to call #${callDisplayNumberMap.get(call.id)} with ${equipment.name}`
-                                                      };
-
-                                                      const updatedCall = {
-                                                        ...call,
-                                                        assignedTeam: [...(call.assignedTeam || []), team.team],
-                                                        equipmentTeams: [...(call.equipmentTeams || []), team.team],
-                                                        status: 'Assigned',
-                                                        log: [...(call.log || []), callLogEntry]
-                                                      };
-
-                                                      const updatedStaff = event.staff.map((t: Staff) =>
-                                                        t.team === team.team
-                                                          ? {
-                                                              ...t,
-                                                              status: 'En Route Eq',
-                                                              location: call.location,
-                                                              originalPost: t.location || 'Unknown',
-                                                              log: [...(t.log || []), teamLogEntry]
-                                                            }
-                                                          : t
-                                                      );
-
-                                                      const updatedCalls = event.calls.map((c: Call) =>
-                                                        c.id === call.id ? updatedCall : c
-                                                      );
-
-                                                      await updateEvent({
-                                                        calls: updatedCalls,
-                                                        staff: updatedStaff,
-                                                        eventEquipment: updatedEquipment
-                                                      });
-                                                    }}
-                                                  >
-                                                    {team.team}
-                                                  </DropdownMenuItem>
-                                                ))
-                                              ];
-                                            })()}
-
-                                            {/* Available SUPERVISORS and INACTIVE SUPERVISORS for In Clinic equipment */}
-                                            {(() => {
-                                              const availableSupervisors = event.supervisor?.filter((sup: Supervisor) => {
-                                                const notAssignedToThisCall = !call.assignedTeam?.includes(sup.team);
-                                                const notAssignedToAnyActiveCall = !event.calls?.some((c: Call) => 
-                                                  c.assignedTeam?.includes(sup.team) && 
-                                                  !['Resolved', 'Delivered', 'Refusal', 'NMM', 'Rolled'].includes(c.status)
-                                                );
-                                                return notAssignedToThisCall && notAssignedToAnyActiveCall && sup.status === 'Available';
-                                              }) || [];
-                                              
-                                              const inactiveSupervisors = event.supervisor?.filter((sup: Supervisor) => {
-                                                const notAssignedToThisCall = !call.assignedTeam?.includes(sup.team);
-                                                const notAssignedToAnyActiveCall = !event.calls?.some((c: Call) => 
-                                                  c.assignedTeam?.includes(sup.team) && 
-                                                  !['Resolved', 'Delivered', 'Refusal', 'NMM', 'Rolled'].includes(c.status)
-                                                );
-                                                return notAssignedToThisCall && notAssignedToAnyActiveCall && ['In Clinic', 'On Break'].includes(sup.status);
-                                              }) || [];
-                                              
-                                              return [
-                                                ...availableSupervisors.map((supervisor: Supervisor) => {
-                                                  const match = supervisor.member.match(/^(.+?)\s\[(.+?)\]/);
-                                                  const memberName = match ? match[1] : supervisor.member;
-                                                  
-                                                  return (
+                                                return [
+                                                  ...availableTeams.map((team: Staff) => (
                                                     <DropdownMenuItem
-                                                      key={`equip-supervisor-clinic-${supervisor.team}`}
+                                                      key={`equip-team-clinic-${team.team}`}
                                                       className="text-surface-light hover:bg-surface-liner focus:bg-surface-liner cursor-pointer"
                                                       onClick={async () => {
                                                         const now = new Date();
@@ -1108,42 +1024,43 @@ export const CallTrackingTable: React.FC<CallTrackingTableProps> = ({
                                                         const updatedEquipment = event.eventEquipment?.map((eq: Equipment) =>
                                                           eq.id === equipment.id
                                                             ? {
-                                                                ...eq,
-                                                                status: 'In Use' as EquipmentStatus,
-                                                                assignedTeam: supervisor.team,
-                                                                location: call.location
-                                                              }
+                                                              ...eq,
+                                                              status: 'In Use' as EquipmentStatus,
+                                                              assignedTeam: team.team,
+                                                              location: call.location
+                                                            }
                                                             : eq
                                                         );
 
                                                         const callLogEntry = {
                                                           timestamp: now.getTime(),
-                                                          message: `${hhmm} - ${equipment.name} assigned to Supervisor ${memberName} (${supervisor.team}) for this call.`
+                                                          message: `${hhmm} - ${equipment.name} assigned to ${team.team} for this call.`
                                                         };
 
                                                         const teamLogEntry = {
                                                           timestamp: now.getTime(),
-                                                          message: `${hhmm} - responding to call #${callDisplayNumberMap.get(call.id)} with ${equipment.name} (supervisor support)`
+                                                          message: `${hhmm} - responding to call #${callDisplayNumberMap.get(call.id)} with ${equipment.name}`
                                                         };
 
                                                         const updatedCall = {
                                                           ...call,
-                                                          assignedTeam: [...(call.assignedTeam || []), supervisor.team],
-                                                          equipmentTeams: [...(call.equipmentTeams || []), supervisor.team],
+                                                          assignedTeam: [...(call.assignedTeams || []), team.team],
+                                                          equipment: [...(call.equipment || []), equipment.name],
+                                                          equipmentTeams: [...(call.equipmentTeams || []), team.team],
                                                           status: 'Assigned',
                                                           log: [...(call.log || []), callLogEntry]
                                                         };
 
-                                                        const updatedSupervisor = event.supervisor?.map((s: Supervisor) =>
-                                                          s.team === supervisor.team
+                                                        const updatedStaff = event.staff.map((t: Staff) =>
+                                                          t.team === team.team
                                                             ? {
-                                                                ...s,
-                                                                status: 'En Route Eq',
-                                                                location: call.location,
-                                                                originalPost: s.location || 'Unknown',
-                                                                log: [...(s.log || []), teamLogEntry]
-                                                              }
-                                                            : s
+                                                              ...t,
+                                                              status: 'En Route Eq',
+                                                              location: call.location,
+                                                              originalPost: t.location || 'Unknown',
+                                                              log: [...(t.log || []), teamLogEntry]
+                                                            }
+                                                            : t
                                                         );
 
                                                         const updatedCalls = event.calls.map((c: Call) =>
@@ -1152,22 +1069,17 @@ export const CallTrackingTable: React.FC<CallTrackingTableProps> = ({
 
                                                         await updateEvent({
                                                           calls: updatedCalls,
-                                                          supervisor: updatedSupervisor,
+                                                          staff: updatedStaff,
                                                           eventEquipment: updatedEquipment
                                                         });
                                                       }}
                                                     >
-                                                      {supervisor.team}
+                                                      {team.team}
                                                     </DropdownMenuItem>
-                                                  );
-                                                }),
-                                                ...inactiveSupervisors.map((supervisor: Supervisor) => {
-                                                  const match = supervisor.member.match(/^(.+?)\s\[(.+?)\]/);
-                                                  const memberName = match ? match[1] : supervisor.member;
-                                                  
-                                                  return (
+                                                  )),
+                                                  ...inactiveTeams.map((team: Staff) => (
                                                     <DropdownMenuItem
-                                                      key={`equip-supervisor-inactive-clinic-${supervisor.team}`}
+                                                      key={`equip-team-inactive-clinic-${team.team}`}
                                                       className="text-surface-light hover:bg-surface-liner focus:bg-surface-liner cursor-pointer bg-status-blue/20"
                                                       onClick={async () => {
                                                         const now = new Date();
@@ -1176,42 +1088,42 @@ export const CallTrackingTable: React.FC<CallTrackingTableProps> = ({
                                                         const updatedEquipment = event.eventEquipment?.map((eq: Equipment) =>
                                                           eq.id === equipment.id
                                                             ? {
-                                                                ...eq,
-                                                                status: 'In Use' as EquipmentStatus,
-                                                                assignedTeam: supervisor.team,
-                                                                location: call.location
-                                                              }
+                                                              ...eq,
+                                                              status: `Call ${call.order}`,
+                                                              assignedTeam: team.team,
+                                                              location: team.team
+                                                            }
                                                             : eq
                                                         );
 
                                                         const callLogEntry = {
                                                           timestamp: now.getTime(),
-                                                          message: `${hhmm} - ${equipment.name} assigned to Supervisor ${memberName} (${supervisor.team}) for this call.`
+                                                          message: `${hhmm} - ${equipment.name} assigned to ${team.team} for this call.`
                                                         };
 
                                                         const teamLogEntry = {
                                                           timestamp: now.getTime(),
-                                                          message: `${hhmm} - responding to call #${callDisplayNumberMap.get(call.id)} with ${equipment.name} (supervisor support)`
+                                                          message: `${hhmm} - responding to call #${callDisplayNumberMap.get(call.id)} with ${equipment.name}`
                                                         };
 
                                                         const updatedCall = {
                                                           ...call,
-                                                          assignedTeam: [...(call.assignedTeam || []), supervisor.team],
-                                                          equipmentTeams: [...(call.equipmentTeams || []), supervisor.team],
+                                                          assignedTeam: [...(call.assignedTeams || []), team.team],
+                                                          equipmentTeams: [...(call.equipmentTeams || []), team.team],
                                                           status: 'Assigned',
                                                           log: [...(call.log || []), callLogEntry]
                                                         };
 
-                                                        const updatedSupervisor = event.supervisor?.map((s: Supervisor) =>
-                                                          s.team === supervisor.team
+                                                        const updatedStaff = event.staff.map((t: Staff) =>
+                                                          t.team === team.team
                                                             ? {
-                                                                ...s,
-                                                                status: 'En Route Eq',
-                                                                location: call.location,
-                                                                originalPost: s.location || 'Unknown',
-                                                                log: [...(s.log || []), teamLogEntry]
-                                                              }
-                                                            : s
+                                                              ...t,
+                                                              status: 'En Route Eq',
+                                                              location: call.location,
+                                                              originalPost: t.location || 'Unknown',
+                                                              log: [...(t.log || []), teamLogEntry]
+                                                            }
+                                                            : t
                                                         );
 
                                                         const updatedCalls = event.calls.map((c: Call) =>
@@ -1220,27 +1132,186 @@ export const CallTrackingTable: React.FC<CallTrackingTableProps> = ({
 
                                                         await updateEvent({
                                                           calls: updatedCalls,
-                                                          supervisor: updatedSupervisor,
+                                                          staff: updatedStaff,
                                                           eventEquipment: updatedEquipment
                                                         });
                                                       }}
                                                     >
-                                                      {supervisor.team}
+                                                      {team.team}
                                                     </DropdownMenuItem>
+                                                  ))
+                                                ];
+                                              })()}
+
+                                              {/* Available SUPERVISORS and INACTIVE SUPERVISORS for In Clinic equipment */}
+                                              {(() => {
+                                                const availableSupervisors = event.supervisor?.filter((sup: Supervisor) => {
+                                                  const notAssignedToThisCall = !call.assignedTeams?.includes(sup.team);
+                                                  const notAssignedToAnyActiveCall = !event.calls?.some((c: Call) =>
+                                                    c.assignedTeams?.includes(sup.team) &&
+                                                    !['Resolved', 'Delivered', 'Refusal', 'NMM', 'Rolled'].includes(c.status)
                                                   );
-                                                })
-                                              ];
-                                            })()}
+                                                  return notAssignedToThisCall && notAssignedToAnyActiveCall && sup.status === 'Available';
+                                                }) || [];
+
+                                                const inactiveSupervisors = event.supervisor?.filter((sup: Supervisor) => {
+                                                  const notAssignedToThisCall = !call.assignedTeams?.includes(sup.team);
+                                                  const notAssignedToAnyActiveCall = !event.calls?.some((c: Call) =>
+                                                    c.assignedTeams?.includes(sup.team) &&
+                                                    !['Resolved', 'Delivered', 'Refusal', 'NMM', 'Rolled'].includes(c.status)
+                                                  );
+                                                  return notAssignedToThisCall && notAssignedToAnyActiveCall && ['In Clinic', 'On Break'].includes(sup.status);
+                                                }) || [];
+
+                                                return [
+                                                  ...availableSupervisors.map((supervisor: Supervisor) => {
+                                                    const match = supervisor.member.match(/^(.+?)\s\[(.+?)\]/);
+                                                    const memberName = match ? match[1] : supervisor.member;
+
+                                                    return (
+                                                      <DropdownMenuItem
+                                                        key={`equip-supervisor-clinic-${supervisor.team}`}
+                                                        className="text-surface-light hover:bg-surface-liner focus:bg-surface-liner cursor-pointer"
+                                                        onClick={async () => {
+                                                          const now = new Date();
+                                                          const hhmm = now.getHours().toString().padStart(2, '0') + now.getMinutes().toString().padStart(2, '0');
+
+                                                          const updatedEquipment = event.eventEquipment?.map((eq: Equipment) =>
+                                                            eq.id === equipment.id
+                                                              ? {
+                                                                ...eq,
+                                                                status: 'In Use' as EquipmentStatus,
+                                                                assignedTeam: supervisor.team,
+                                                                location: call.location
+                                                              }
+                                                              : eq
+                                                          );
+
+                                                          const callLogEntry = {
+                                                            timestamp: now.getTime(),
+                                                            message: `${hhmm} - ${equipment.name} assigned to Supervisor ${memberName} (${supervisor.team}) for this call.`
+                                                          };
+
+                                                          const teamLogEntry = {
+                                                            timestamp: now.getTime(),
+                                                            message: `${hhmm} - responding to call #${callDisplayNumberMap.get(call.id)} with ${equipment.name} (supervisor support)`
+                                                          };
+
+                                                          const updatedCall = {
+                                                            ...call,
+                                                            assignedTeam: [...(call.assignedTeams || []), supervisor.team],
+                                                            equipmentTeams: [...(call.equipmentTeams || []), supervisor.team],
+                                                            status: 'Assigned',
+                                                            log: [...(call.log || []), callLogEntry]
+                                                          };
+
+                                                          const updatedSupervisor = event.supervisor?.map((s: Supervisor) =>
+                                                            s.team === supervisor.team
+                                                              ? {
+                                                                ...s,
+                                                                status: 'En Route Eq',
+                                                                location: call.location,
+                                                                originalPost: s.location || 'Unknown',
+                                                                log: [...(s.log || []), teamLogEntry]
+                                                              }
+                                                              : s
+                                                          );
+
+                                                          const updatedCalls = event.calls.map((c: Call) =>
+                                                            c.id === call.id ? updatedCall : c
+                                                          );
+
+                                                          await updateEvent({
+                                                            calls: updatedCalls,
+                                                            supervisor: updatedSupervisor,
+                                                            eventEquipment: updatedEquipment
+                                                          });
+                                                        }}
+                                                      >
+                                                        {supervisor.team}
+                                                      </DropdownMenuItem>
+                                                    );
+                                                  }),
+                                                  ...inactiveSupervisors.map((supervisor: Supervisor) => {
+                                                    const match = supervisor.member.match(/^(.+?)\s\[(.+?)\]/);
+                                                    const memberName = match ? match[1] : supervisor.member;
+
+                                                    return (
+                                                      <DropdownMenuItem
+                                                        key={`equip-supervisor-inactive-clinic-${supervisor.team}`}
+                                                        className="text-surface-light hover:bg-surface-liner focus:bg-surface-liner cursor-pointer bg-status-blue/20"
+                                                        onClick={async () => {
+                                                          const now = new Date();
+                                                          const hhmm = now.getHours().toString().padStart(2, '0') + now.getMinutes().toString().padStart(2, '0');
+
+                                                          const updatedEquipment = event.eventEquipment?.map((eq: Equipment) =>
+                                                            eq.id === equipment.id
+                                                              ? {
+                                                                ...eq,
+                                                                status: 'In Use' as EquipmentStatus,
+                                                                assignedTeam: supervisor.team,
+                                                                location: call.location
+                                                              }
+                                                              : eq
+                                                          );
+
+                                                          const callLogEntry = {
+                                                            timestamp: now.getTime(),
+                                                            message: `${hhmm} - ${equipment.name} assigned to Supervisor ${memberName} (${supervisor.team}) for this call.`
+                                                          };
+
+                                                          const teamLogEntry = {
+                                                            timestamp: now.getTime(),
+                                                            message: `${hhmm} - responding to call #${callDisplayNumberMap.get(call.id)} with ${equipment.name} (supervisor support)`
+                                                          };
+
+                                                          const updatedCall = {
+                                                            ...call,
+                                                            assignedTeam: [...(call.assignedTeams || []), supervisor.team],
+                                                            equipmentTeams: [...(call.equipmentTeams || []), supervisor.team],
+                                                            status: 'Assigned',
+                                                            log: [...(call.log || []), callLogEntry]
+                                                          };
+
+                                                          const updatedSupervisor = event.supervisor?.map((s: Supervisor) =>
+                                                            s.team === supervisor.team
+                                                              ? {
+                                                                ...s,
+                                                                status: 'En Route Eq',
+                                                                location: call.location,
+                                                                originalPost: s.location || 'Unknown',
+                                                                log: [...(s.log || []), teamLogEntry]
+                                                              }
+                                                              : s
+                                                          );
+
+                                                          const updatedCalls = event.calls.map((c: Call) =>
+                                                            c.id === call.id ? updatedCall : c
+                                                          );
+
+                                                          await updateEvent({
+                                                            calls: updatedCalls,
+                                                            supervisor: updatedSupervisor,
+                                                            eventEquipment: updatedEquipment
+                                                          });
+                                                        }}
+                                                      >
+                                                        {supervisor.team}
+                                                      </DropdownMenuItem>
+                                                    );
+                                                  })
+                                                ];
+                                              })()}
                                             </DropdownMenuSubContent>
-                                            </DropdownMenuSub>
-                                            ))
+                                          </DropdownMenuSub>
+                                        ))
                                       ];
                                     })()}
                                     {(!event.eventEquipment || (event.eventEquipment.filter((eq: Equipment) => eq.status === 'Available' || eq.status === 'In Clinic' || !eq.assignedTeam).length === 0)) && (
-                                              <DropdownMenuItem disabled className="text-surface-light/50">
-                                                No equipment available
-                                              </DropdownMenuItem>
-                                            )}
+                                      <DropdownMenuItem disabled className="text-surface-light/50">
+                                        No equipment available
+                                      </DropdownMenuItem>
+                                    )}
                                   </DropdownMenuSubContent>
                                 </DropdownMenuSub>
                               </DropdownMenuContent>
@@ -1261,25 +1332,19 @@ export const CallTrackingTable: React.FC<CallTrackingTableProps> = ({
                               </button>
                             </DropdownTrigger>
                             <DropdownMenu aria-label="Call actions">
-                              <DropdownItem 
+                              <DropdownItem
                                 key="showLog"
                                 onPress={() => setOpenCallId(openCallId === call.id ? null : call.id)}
                               >
                                 {openCallId === call.id ? 'Hide Log' : 'Show Log'}
                               </DropdownItem>
-                              <DropdownItem 
+                              <DropdownItem
                                 key="duplicate"
                                 onPress={() => handleMarkDuplicate(call.id)}
                               >
                                 Mark as Duplicate
                               </DropdownItem>
-                              <DropdownItem 
-                                key="priority"
-                                onPress={() => handleTogglePriorityFromMenu(call.id)}
-                              >
-                                {call.priority ? 'Remove Priority' : 'Mark as Priority'}
-                              </DropdownItem>
-                              <DropdownItem 
+                              <DropdownItem
                                 key="delete"
                                 className="text-danger"
                                 color="danger"
@@ -1295,126 +1360,123 @@ export const CallTrackingTable: React.FC<CallTrackingTableProps> = ({
                           </Dropdown>
                         </td>
                       </tr>
-                  
-                  {/* Expanded row for notes and log - NO ANIMATION */}
-                  {openCallId === call.id && (
-                    <tr>
-                      <td
-                        colSpan={7}
-                        className={`p-2 border-b border-surface-liner ${getCallRowClass(call)}`}
-                        onClick={() => setOpenCallId(null)}
-                      >
-                        <div className="cursor-pointer">
-                          {call.priority && (
-                            <div className="bg-status-red text-surface-light p-2 mb-2 rounded">
-                              ⚠️ PRIORITY CALL: Life threat to patient/provider
-                            </div>
-                          )}
-                          
-                          {/* Notes - Using HeroUI Textarea - NO LOG ENTRY */}
-                          <div
-                            className="mt-1 mb-3 text-sm text-surface-light"
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            <div className="font-semibold mb-1">Notes</div>
-                            <Textarea
-                              value={notesTexts[call.id] ?? (call.notes || '')}
-                              onChange={(e) => {
-                                setNotesTexts(prev => ({ ...prev, [call.id]: e.target.value }));
-                              }}
-                              onBlur={async () => {
-                                notesFocusedRef.current = null;
-                                const text = notesTexts[call.id] ?? '';
-                                const callNow = event?.calls.find((c: Call) => c.id === call.id);
-                                if (!callNow) return;
-                                
-                                if ((callNow.notes || '') !== text) {
-                                  const updatedCall = { ...callNow, notes: text };
-                                  const updated = event!.calls.map((c: Call) => 
-                                    c.id === call.id ? updatedCall : c
-                                  );
-                                  await updateEvent({ calls: updated });
-                                }
-                              }}
-                              onFocus={() => {
-                                notesFocusedRef.current = call.id;
-                              }}
-                              minRows={2}
-                              variant="flat"
-                              placeholder="Add notes"
-                              className="min-w-0"
-                              classNames={{
-                                input: "text-surface-light bg-surface-deep outline-none focus:outline-none data-[focus=true]:outline-none focus:ring-0 focus-visible:ring-0",
-                                inputWrapper: "bg-surface-deep shadow-none border border-surface-liner hover:bg-surface-liner group-data-[focus=true]:bg-surface-deep group-data-[focus-visible=true]:bg-surface-deep group-data-[focus-visible=true]:ring-0 group-data-[focus-visible=true]:ring-offset-0 focus-within:ring-0"
-                              }}
-                            />
-                          </div>
 
-                          
-                          {/* Log - Editable Textarea */}
-                          <div onClick={(e) => e.stopPropagation()}>
-                            <strong>Log for Call #{callDisplayNumberMap.get(call.id)}:</strong>
-                            <Textarea
-                              value={logTexts[call.id] ?? (() => {
-                                if (call.log && call.log.length > 0) {
-                                  return call.log.map((entry: LogEntry) => entry.message).join('\n');
-                                }
-                                return '';
-                              })()}
-                              onChange={(e) => {
-                                setLogTexts(prev => ({ ...prev, [call.id]: e.target.value }));
-                              }}
-                              onBlur={async () => {
-                                logFocusedRef.current = null;
-                                const text = logTexts[call.id] ?? '';
-                                const callNow = event?.calls.find((c: Call) => c.id === call.id);
-                                if (!callNow) return;
-                                
-                                // Convert text back to log entries
-                                const lines = text.split('\n').filter(line => line.trim());
-                                const newLog: LogEntry[] = lines.map(line => ({
-                                  timestamp: Date.now(),
-                                  message: line
-                                }));
-                                
-                                const updatedCall = { ...callNow, log: newLog };
-                                const updated = event!.calls.map((c: Call) => 
-                                  c.id === call.id ? updatedCall : c
-                                );
-                                await updateEvent({ calls: updated });
-                              }}
-                              onFocus={() => {
-                                logFocusedRef.current = call.id;
-                              }}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter' && !e.shiftKey) {
-                                  e.preventDefault();
-                                  const now = new Date();
-                                  const hhmm = now.getHours().toString().padStart(2, '0') + now.getMinutes().toString().padStart(2, '0');
-                                  setLogTexts(prev => ({ ...prev, [call.id]: (prev[call.id] || '') + `\n${hhmm} - ` }));
-                                }
-                              }}
-                              minRows={4}
-                              variant="flat"
-                              placeholder="No log entries"
-                              className="min-w-0"
-                              classNames={{
-                                input: "text-surface-light bg-surface-deep outline-none focus:outline-none data-[focus=true]:outline-none focus:ring-0 focus-visible:ring-0 text-sm",
-                                inputWrapper: "bg-surface-deep shadow-none border border-surface-liner hover:bg-surface-liner group-data-[focus=true]:bg-surface-deep group-data-[focus-visible=true]:bg-surface-deep group-data-[focus-visible=true]:ring-0 group-data-[focus-visible=true]:ring-offset-0 focus-within:ring-0"
-                              }}
-                            />
-                          </div>
-                        </div>
-                      </td>
-                    </tr>
-                  )}
-                </React.Fragment>
-                );
-              })}
+                      {/* Expanded row for notes and log - NO ANIMATION */}
+                      {openCallId === call.id && (
+                        <tr>
+                          <td
+                            colSpan={7}
+                            className={`p-2 border-b border-surface-liner ${getCallRowClass(call)}`}
+                            onClick={() => setOpenCallId(null)}
+                          >
+                            <div className="cursor-pointer">
+
+                              <CriticalPriorityBanner priority={call.priority} />
+
+                              {/* Notes - Using HeroUI Textarea - NO LOG ENTRY */}
+                              <div
+                                className="mt-1 mb-3 text-sm text-surface-light"
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                <div className="font-semibold mb-1">Notes</div>
+                                <Textarea
+                                  value={notesTexts[call.id] ?? (call.notes || '')}
+                                  onChange={(e) => {
+                                    setNotesTexts(prev => ({ ...prev, [call.id]: e.target.value }));
+                                  }}
+                                  onBlur={async () => {
+                                    notesFocusedRef.current = null;
+                                    const text = notesTexts[call.id] ?? '';
+                                    const callNow = event?.calls.find((c: Call) => c.id === call.id);
+                                    if (!callNow) return;
+
+                                    if ((callNow.notes || '') !== text) {
+                                      const updatedCall = { ...callNow, notes: text };
+                                      const updated = event!.calls.map((c: Call) =>
+                                        c.id === call.id ? updatedCall : c
+                                      );
+                                      await updateEvent({ calls: updated });
+                                    }
+                                  }}
+                                  onFocus={() => {
+                                    notesFocusedRef.current = call.id;
+                                  }}
+                                  minRows={2}
+                                  variant="flat"
+                                  placeholder="Add notes"
+                                  className="min-w-0"
+                                  classNames={{
+                                    input: "text-surface-light bg-surface-deep outline-none focus:outline-none data-[focus=true]:outline-none focus:ring-0 focus-visible:ring-0",
+                                    inputWrapper: "bg-surface-deep shadow-none border border-surface-liner hover:bg-surface-liner group-data-[focus=true]:bg-surface-deep group-data-[focus-visible=true]:bg-surface-deep group-data-[focus-visible=true]:ring-0 group-data-[focus-visible=true]:ring-offset-0 focus-within:ring-0"
+                                  }}
+                                />
+                              </div>
+
+
+                              {/* Log - Editable Textarea */}
+                              <div onClick={(e) => e.stopPropagation()}>
+                                <strong>Log for Call #{callDisplayNumberMap.get(call.id)}:</strong>
+                                <Textarea
+                                  value={logTexts[call.id] ?? (() => {
+                                    if (call.log && call.log.length > 0) {
+                                      return call.log.map((entry: LogEntry) => entry.message).join('\n');
+                                    }
+                                    return '';
+                                  })()}
+                                  onChange={(e) => {
+                                    setLogTexts(prev => ({ ...prev, [call.id]: e.target.value }));
+                                  }}
+                                  onBlur={async () => {
+                                    logFocusedRef.current = null;
+                                    const text = logTexts[call.id] ?? '';
+                                    const callNow = event?.calls.find((c: Call) => c.id === call.id);
+                                    if (!callNow) return;
+
+                                    // Convert text back to log entries
+                                    const lines = text.split('\n').filter(line => line.trim());
+                                    const newLog: LogEntry[] = lines.map(line => ({
+                                      timestamp: Date.now(),
+                                      message: line
+                                    }));
+
+                                    const updatedCall = { ...callNow, log: newLog };
+                                    const updated = event!.calls.map((c: Call) =>
+                                      c.id === call.id ? updatedCall : c
+                                    );
+                                    await updateEvent({ calls: updated });
+                                  }}
+                                  onFocus={() => {
+                                    logFocusedRef.current = call.id;
+                                  }}
+                                  onKeyDown={(e) => {
+                                    if (e.key === 'Enter' && !e.shiftKey) {
+                                      e.preventDefault();
+                                      const now = new Date();
+                                      const hhmm = now.getHours().toString().padStart(2, '0') + now.getMinutes().toString().padStart(2, '0');
+                                      setLogTexts(prev => ({ ...prev, [call.id]: (prev[call.id] || '') + `\n${hhmm} - ` }));
+                                    }
+                                  }}
+                                  minRows={4}
+                                  variant="flat"
+                                  placeholder="No log entries"
+                                  className="min-w-0"
+                                  classNames={{
+                                    input: "text-surface-light bg-surface-deep outline-none focus:outline-none data-[focus=true]:outline-none focus:ring-0 focus-visible:ring-0 text-sm",
+                                    inputWrapper: "bg-surface-deep shadow-none border border-surface-liner hover:bg-surface-liner group-data-[focus=true]:bg-surface-deep group-data-[focus-visible=true]:bg-surface-deep group-data-[focus-visible=true]:ring-0 group-data-[focus-visible=true]:ring-offset-0 focus-within:ring-0"
+                                  }}
+                                />
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </React.Fragment>
+                  );
+                })}
             </tbody>
           </table>
         </div>
-        
+
         <div className="flex justify-center pt-3">
           <button
             onClick={() => setShowResolvedCalls(prev => !prev)}

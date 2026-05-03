@@ -12,17 +12,11 @@ import {
   Input,
   Select,
   SelectItem,
+  SharedSelection,
+  SelectedItems,
 } from "@heroui/react";
-import type { Event, Staff, Call, TeamLogEntry } from "@/app/types";
-
-type QuickCallState = {
-  location: string;
-  source: string;
-  age: string;
-  gender: string;
-  chiefComplaint: string;
-  assignedTeam: string; // single select
-};
+import { type Event, type Staff, type Call, type TeamLogEntry, Priority, type QuickCallState } from "@/app/types";
+import ColorChip from "@/components/modals/event/colorchip";
 
 type Props = {
   isOpen: boolean;
@@ -36,6 +30,8 @@ type Props = {
   formatAgeSex: (age?: string, gender?: string) => string;
   parseAgeSex: (raw: string) => { age: string; gender: string };
 
+  priorities: Priority[] | null;
+
   quickCallRef?: React.RefObject<HTMLFormElement | null>;
 };
 
@@ -48,6 +44,7 @@ export default function QuickCallModal({
   setQuickCall,
   formatAgeSex,
   parseAgeSex,
+  priorities,
   quickCallRef,
 }: Props) {
   const [submitting, setSubmitting] = React.useState(false);
@@ -55,27 +52,27 @@ export default function QuickCallModal({
   // Replace the postedTeams useMemo
   const { availableTeams, inactiveTeams } = React.useMemo(() => {
     const allTeams = event?.staff ?? [];
-    
+
     const available = allTeams.filter((staff: Staff) => {
-      const isAssignedToActiveCall = event?.calls?.some((c: Call) => 
-        c.assignedTeam?.includes(staff.team) && 
+      const isAssignedToActiveCall = event?.calls?.some((c: Call) =>
+        c.assignedTeams?.includes(staff.team) &&
         !['Resolved', 'Delivered', 'Refusal', 'NMM', 'Rolled'].includes(c.status)
       );
       return !isAssignedToActiveCall && staff.status === 'Available';
     }).sort((a: Staff, b: Staff) =>
       a.team.localeCompare(b.team, undefined, { numeric: true })
     );
-    
+
     const inactive = allTeams.filter((staff: Staff) => {
-      const isAssignedToActiveCall = event?.calls?.some((c: Call) => 
-        c.assignedTeam?.includes(staff.team) && 
+      const isAssignedToActiveCall = event?.calls?.some((c: Call) =>
+        c.assignedTeams?.includes(staff.team) &&
         !['Resolved', 'Delivered', 'Refusal', 'NMM', 'Rolled'].includes(c.status)
       );
       return !isAssignedToActiveCall && ['In Clinic', 'On Break'].includes(staff.status || '');
     }).sort((a: Staff, b: Staff) =>
       a.team.localeCompare(b.team, undefined, { numeric: true })
     );
-    
+
     return { availableTeams: available, inactiveTeams: inactive };
   }, [event?.staff, event?.calls]);
 
@@ -94,8 +91,8 @@ export default function QuickCallModal({
       const nextOrder =
         event?.calls?.length
           ? Math.max(
-              ...event.calls.map((c) => (typeof c.order === "number" ? c.order : 0))
-            ) + 1
+            ...event.calls.map((c) => (typeof c.order === "number" ? c.order : 0))
+          ) + 1
           : 1;
 
       const cleanCall: Call = {
@@ -103,29 +100,29 @@ export default function QuickCallModal({
         order: nextOrder,
         status: quickCall.assignedTeam ? "Assigned" : "Pending",
         location: quickCall.location.trim() || "Unknown",
-        assignedTeam: quickCall.assignedTeam ? [quickCall.assignedTeam] : [],
+        assignedTeams: quickCall.assignedTeam ? [quickCall.assignedTeam] : [],
         chiefComplaint: quickCall.chiefComplaint?.trim() || "",
         ...(quickCall.source?.trim() && { source: quickCall.source.trim() }),
         ...(quickCall.age?.trim() && { age: quickCall.age.trim() }),
         ...(quickCall.gender?.trim() && { gender: quickCall.gender.trim() }),
-        priority: false,
+        priority: quickCall.priority,
         log: [
           {
             timestamp: now.getTime(),
-            message: `${hhmm} - Call created${
-              quickCall.source ? ` from ${quickCall.source}` : ""
-            }${quickCall.chiefComplaint ? `, complaint: ${quickCall.chiefComplaint}` : ""}, location: ${
-              quickCall.location.trim() || "Unknown"
-            }${
-              quickCall.assignedTeam ? `, assigned to ${quickCall.assignedTeam}` : ""
-            }`,
+            message: `${hhmm} - Call created${quickCall.source ? ` from ${quickCall.source}` : ""
+              }${quickCall.chiefComplaint ? `, complaint: ${quickCall.chiefComplaint}` : ""}, location: ${quickCall.location.trim() || "Unknown"
+              }${quickCall.assignedTeam ? `, assigned to ${quickCall.assignedTeam}` : ""
+              }`,
           },
         ],
+        source: quickCall.source.trim() ?? "",
+        age: quickCall.age.trim() ?? "",
+        gender: quickCall.gender.trim() ?? "",
       };
 
       // Update staff if a team was assigned
       let updatedStaff: Staff[] | undefined = event?.staff;
-      
+
       if (quickCall.assignedTeam && event?.staff) {
         const teamLogEntry: TeamLogEntry = {
           timestamp: now.getTime(),
@@ -135,13 +132,13 @@ export default function QuickCallModal({
         updatedStaff = event.staff.map((staff: Staff) =>
           staff.team === quickCall.assignedTeam
             ? {
-                ...staff,
-                status: "En Route",
-                location: quickCall.location,
-                originalPost: staff.location || "Unknown",
-                // Now teamLogEntry matches the type expected inside the log array
-                log: [...(staff.log || []), teamLogEntry],
-              }
+              ...staff,
+              status: "En Route",
+              location: quickCall.location,
+              originalPost: staff.location || "Unknown",
+              // Now teamLogEntry matches the type expected inside the log array
+              log: [...(staff.log || []), teamLogEntry],
+            }
             : staff
         );
       }
@@ -157,6 +154,7 @@ export default function QuickCallModal({
         source: "",
         age: "",
         gender: "",
+        priority: Priority.empty(),
         chiefComplaint: "",
         assignedTeam: "",
       });
@@ -213,8 +211,44 @@ export default function QuickCallModal({
             </ModalHeader>
 
             <ModalBody className="">
+              <Select
+                label="Priority"
+                items={priorities ?? []}
+                placeholder="Select a priority"
+                defaultSelectedKeys={new Set([quickCall.priority.id])}
+                onSelectionChange={(key: SharedSelection) => {
+                  if (!!priorities) {
+                    setQuickCall((p) => ({ ...p, priority: new Priority(key.currentKey as string, priorities[Number(key.currentKey)]?.name, priorities[Number(key.currentKey)]?.color) }));
+                  }
+                }}
+                aria-label="Priority"
+                disallowEmptySelection={false}
+                classNames={inputClassNames}
+                renderValue={(items: SelectedItems<Priority>) =>
+                  items.map((item) => (
+                    <div key={item.key} className="flex items-center gap-2">
+                      <ColorChip color={item.data?.color ?? ""} />
+                      {item.textValue}
+                    </div>
+                  ))
+                }
+                isRequired
+              >
+                {
+                  (priority) => (
+                    <SelectItem
+                      key={priority.id}
+                      textValue={`P${priority.id} - ${priority.name}`}
+                      startContent={
+                        ColorChip({ color: priority.color })
+                      }
+                    >
+                      P{priority.id} - {priority.name}
+                    </SelectItem>
+                  )
+                }
+              </Select>
               <Input
-                autoFocus
                 label="Location"
                 labelPlacement="inside"
                 variant="bordered"
@@ -262,40 +296,40 @@ export default function QuickCallModal({
                 aria-label="Chief Complaint"
               />
               <Select
-              label="Assign Team"
-              placeholder="Select a team"
-              selectedKeys={quickCall.assignedTeam ? new Set([quickCall.assignedTeam]) : new Set()}
-              onSelectionChange={(keys) => {
-                if (keys === "all") return;
-                const key = Array.from(keys as Set<string>)[0] ?? "";
-                setQuickCall((p) => ({ ...p, assignedTeam: key }));
-              }}
-              aria-label="Assign Team"
-              disallowEmptySelection={false}
-              classNames={selectClassNames}
-            >
-              {[
-                ...availableTeams.map((team) => (
-                  <SelectItem 
-                    key={team.team}
-                    textValue={`${team.team} - ${team.location || 'Unknown'}`}
-                  >
-                    {team.team} - {team.location || 'Unknown'}
-                  </SelectItem>
-                )),
-                ...inactiveTeams.map((team) => (
-                  <SelectItem 
-                    key={team.team}
-                    textValue={`${team.team} - ${team.location || 'Unknown'}`}
-                    classNames={{
-                      base: "bg-status-blue/20"
-                    }}
-                  >
-                    {team.team} - {team.location || 'Unknown'}
-                  </SelectItem>
-                ))
-              ]}
-            </Select>
+                label="Assign Team"
+                placeholder="Select a team"
+                selectedKeys={quickCall.assignedTeam ? new Set([quickCall.assignedTeam]) : new Set()}
+                onSelectionChange={(keys) => {
+                  if (keys === "all") return;
+                  const key = Array.from(keys as Set<string>)[0] ?? "";
+                  setQuickCall((p) => ({ ...p, assignedTeam: key }));
+                }}
+                aria-label="Assign Team"
+                disallowEmptySelection={false}
+                classNames={selectClassNames}
+              >
+                {[
+                  ...availableTeams.map((team) => (
+                    <SelectItem
+                      key={team.team}
+                      textValue={`${team.team} - ${team.location || 'Unknown'}`}
+                    >
+                      {team.team} - {team.location || 'Unknown'}
+                    </SelectItem>
+                  )),
+                  ...inactiveTeams.map((team) => (
+                    <SelectItem
+                      key={team.team}
+                      textValue={`${team.team} - ${team.location || 'Unknown'}`}
+                      classNames={{
+                        base: "bg-status-blue/20"
+                      }}
+                    >
+                      {team.team} - {team.location || 'Unknown'}
+                    </SelectItem>
+                  ))
+                ]}
+              </Select>
             </ModalBody>
 
             <ModalFooter className="flex justify-end gap-2">
@@ -309,6 +343,7 @@ export default function QuickCallModal({
                     gender: "",
                     chiefComplaint: "",
                     assignedTeam: "",
+                    priority: Priority.empty(),
                   });
                   close();
                   onClose();

@@ -1,18 +1,22 @@
 // components/clinictracking.tsx
 'use client';
 
-import React from 'react';
-import { 
-  Button, 
-  Dropdown, 
-  DropdownTrigger, 
-  DropdownMenu, 
+import React, { Key } from 'react';
+import {
+  Button,
+  Dropdown,
+  DropdownTrigger,
+  DropdownMenu,
   DropdownItem,
-  ScrollShadow,
-  Textarea
+  Textarea,
+  Tooltip,
+  Spinner
 } from '@heroui/react';
-import { Plus, MoreVertical } from 'lucide-react';
-import type { Event, Call, CallLogEntry, ClinicOutcome } from '@/app/types';
+import { Plus, ArrowDown, ArrowUp } from 'lucide-react';
+import { Event, Call, CallLogEntry, ClinicOutcome, Priority, LogEntry } from '@/app/types';
+import ColorChip from '../modals/event/colorchip';
+import CriticalPriorityBanner from '../modals/event/criticalprioritybanner';
+import OptionEllipsis from './optionellipsis';
 
 type EditableCallField = keyof Call | 'ageSex';
 
@@ -34,19 +38,8 @@ interface ClinicTrackingTableProps {
   handleAgeSexBlur: (callId: string) => Promise<void>;
   getCallRowClass: (call: Call) => string;
   formatAgeSex: (age?: string | number, gender?: string) => string;
+  priorities: Priority[];
 }
-
-const TableColGroup = () => (
-  <colgroup>
-    <col className="w-16" />
-    <col className="w-40" />
-    <col className="w-16" />
-    <col className="w-48" />
-    <col className="w-28" />
-    <col />
-    <col className="w-12" />
-  </colgroup>
-);
 
 export default function ClinicTrackingTable({
   event,
@@ -66,6 +59,7 @@ export default function ClinicTrackingTable({
   handleAgeSexBlur,
   getCallRowClass,
   formatAgeSex,
+  priorities,
 }: ClinicTrackingTableProps) {
 
   const unresolvedClinicCount = (event?.calls || []).filter(c => c.status === 'Delivered' && !c.outcome).length;
@@ -74,6 +68,10 @@ export default function ClinicTrackingTable({
   const notesFocusedRef = React.useRef<string | null>(null);
   const [logTexts, setLogTexts] = React.useState<Record<string, string>>({});
   const logFocusedRef = React.useRef<string | null>(null);
+
+  const [isPriorityUpdating, setIsPriorityUpdating] = React.useState<Record<string, boolean>>({});
+  const [sortPriorityDirectionAsc, setSortPriorityDirectionAsc] = React.useState<boolean>(false);
+
 
   // Sync notes from props when not focused
   React.useEffect(() => {
@@ -106,7 +104,34 @@ export default function ClinicTrackingTable({
     });
   }, [event?.calls]);
 
-  
+
+  const updatePriority = async (key: Key, call: Call) => {
+    if (call.priority.id == key) {
+      return
+    }
+
+    setIsPriorityUpdating({ [call.id]: true })
+    const updatedCalls = event.calls.map((c: Call) => {
+      if (c.id !== call.id) return c;
+
+      const newPriority: Priority = priorities.find(p => p.id == key) || c.priority
+
+      const callLogEntry = new LogEntry(`Priority moved from '${c.priority.shortName()}' to '${newPriority.shortName()}'`)
+
+      return {
+        ...c,
+        priority: newPriority,
+        log: [...(c.log || []), callLogEntry]
+      } as Call;
+    });
+
+    await updateEvent({ calls: updatedCalls });
+    setIsPriorityUpdating({ [call.id]: false })
+  }
+
+  // const sortCallsByPriority = (el: Call[]) => {
+  //   return el.sort((a, b) => sortPriorityDirectionAsc ? a.priority.id - b.priority.id : b.priority.id - a.priority.id);
+  // }
 
   return (
     <div className="mt-6 p-4 bg-surface-deep rounded-xl overflow-hidden">
@@ -129,14 +154,31 @@ export default function ClinicTrackingTable({
       </div>
       <div className="overflow-x-auto">
         <table className="min-w-[870px] w-full text-[14px] sm:text-[15px] text-surface-light table-fixed border-separate border-spacing-0">
-          <TableColGroup />
+          {/* <TableColGroup /> */}
           <thead>
             <tr className="border-b border-surface-liner">
+              <th className="px-3 py-2.5 text-left text-surface-faint w-24">
+                <div className="flex items-center gap-1">
+                  Priority
+                  <button
+                    onClick={async () => {
+                      setSortPriorityDirectionAsc(!sortPriorityDirectionAsc)
+                    }}
+                    className="text-surface-faint hover:text-foreground transition-colors"
+                  >
+                    {sortPriorityDirectionAsc ?
+                      <ArrowUp size={14} />
+                      :
+                      <ArrowDown size={14} />
+                    }
+                  </button>
+                </div>
+              </th>
               <th className="px-3 py-2.5 text-left text-surface-faint w-16">Call #</th>
               <th className="px-3 py-2.5 text-left text-surface-faint w-40">Chief Complaint</th>
               <th className="px-3 py-2.5 text-left text-surface-faint w-16">A/S</th>
-              <th className="px-3 py-2.5 text-left text-surface-faint w-48">Location</th>
               <th className="px-3 py-2.5 text-left text-surface-faint w-28">Status</th>
+              <th className="px-3 py-2.5 text-left text-surface-faint w-48">Location</th>
               <th className="px-3 py-2.5 text-left text-surface-faint">Team</th>
               <th className="px-3 py-2.5 text-right text-surface-faint w-12"></th>
             </tr>
@@ -145,16 +187,10 @@ export default function ClinicTrackingTable({
           <tbody className="[&>tr>td]:border-b [&>tr>td]:border-surface-liner">
             {[
               // Unresolved clinic (Delivered with no outcome)
-              ...(event?.calls || [])
-                .filter(c => c.status === 'Delivered' && !c.outcome)
-                .sort((a, b) => parseInt(a.id) - parseInt(b.id)),
+              ...event.sortCallsByPriority(sortPriorityDirectionAsc).calls.filter(c => c.status === 'Delivered' && !c.outcome),
 
               // Resolved clinic (Delivered with an outcome) when toggled on
-              ...(showResolvedClinicCalls
-                ? (event?.calls || [])
-                    .filter(c => c.status === 'Delivered' && !!c.outcome)
-                    .sort((a, b) => parseInt(a.id) - parseInt(b.id))
-                : []),
+              ...(showResolvedClinicCalls ? event.sortCallsByPriority(sortPriorityDirectionAsc).calls.filter(c => c.status === 'Delivered' && !!c.outcome) : []),
             ].map(call => (
               <React.Fragment key={call.id}>
                 <tr
@@ -165,6 +201,41 @@ export default function ClinicTrackingTable({
                     setOpenClinicCallId(openClinicCallId === call.id ? null : call.id);
                   }}
                 >
+                  {/* Priority - Using HeroUI Dropdown */}
+                  <td className="px-3 py-2.5" onClick={e => e.stopPropagation()}>
+                    <Dropdown>
+                      <Tooltip content={call.priority.toString()} placement="left">
+                        <span>
+                          <DropdownTrigger>
+                            <Button
+                              size="sm"
+                              variant="flat"
+                              className="min-w-0 h-7 px-2 text-xs justify-start bg-surface-liner hover:bg-surface-muted"
+                              isLoading={isPriorityUpdating[call.id]}
+                              spinner={<Spinner size="sm" color="current" />}
+                            >
+                              <ColorChip color={call.priority.color} />{call.priority.shortName()}
+                            </Button>
+                          </DropdownTrigger>
+                        </span>
+                      </Tooltip>
+                      <DropdownMenu
+                        onAction={async (key: Key) => updatePriority(key, call)}
+                        items={priorities}
+                      >
+                        {
+                          (priority) => (
+                            <DropdownItem key={priority.id} startContent={ColorChip({ color: priority.color })}>
+                              {
+                                priority.toString()
+                              }
+                            </DropdownItem>
+                          )
+                        }
+                      </DropdownMenu>
+                    </Dropdown>
+                  </td>
+
                   <td className="px-3 py-2.5">{callDisplayNumberMap.get(call.id)}</td>
 
                   {/* Chief Complaint (inline edit) */}
@@ -231,36 +302,6 @@ export default function ClinicTrackingTable({
                     )}
                   </td>
 
-
-
-                  {/* Location (inline edit) */}
-                  <td
-                    className="px-3 py-2.5 truncate"
-                    onClick={() => handleCellClick(call.id, 'location', call.location)}
-                  >
-                    {editingCell?.callId === call.id && editingCell.field === 'location' ? (
-                      <input
-                        type="text"
-                        value={editValue}
-                        autoFocus
-                        onChange={e => setEditValue(e.target.value)}
-                        onFocus={e => {
-                          // If the value is "Unknown", select all text so it's easy to replace
-                          if (editValue === 'Unknown') {
-                            e.target.select();
-                          }
-                        }}
-                        onBlur={() => handleCellBlur(call.id, 'location')}
-                        onKeyDown={e => {
-                          if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
-                        }}
-                        className="w-full bg-transparent text-surface-light px-0 py-0 border-0 outline-none focus:outline-none focus:ring-0 focus-visible:outline-none"
-                      />
-                    ) : (
-                      call.location || <span className="text-surface-light whitespace-nowrap">[Edit]</span>
-                    )}
-                  </td>
-
                   {/* Status - Using HeroUI Dropdown */}
                   <td className="px-3 py-2.5" onClick={e => e.stopPropagation()}>
                     <Dropdown>
@@ -306,47 +347,51 @@ export default function ClinicTrackingTable({
                     </Dropdown>
                   </td>
 
+                  {/* Location (inline edit) */}
+                  <td
+                    className="px-3 py-2.5 truncate"
+                    onClick={() => handleCellClick(call.id, 'location', call.location)}
+                  >
+                    {editingCell?.callId === call.id && editingCell.field === 'location' ? (
+                      <input
+                        type="text"
+                        value={editValue}
+                        autoFocus
+                        onChange={e => setEditValue(e.target.value)}
+                        onFocus={e => {
+                          // If the value is "Unknown", select all text so it's easy to replace
+                          if (editValue === 'Unknown') {
+                            e.target.select();
+                          }
+                        }}
+                        onBlur={() => handleCellBlur(call.id, 'location')}
+                        onKeyDown={e => {
+                          if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+                        }}
+                        className="w-full bg-transparent text-surface-light px-0 py-0 border-0 outline-none focus:outline-none focus:ring-0 focus-visible:outline-none"
+                      />
+                    ) : (
+                      call.location || <span className="text-surface-light whitespace-nowrap">[Edit]</span>
+                    )}
+                  </td>
+
                   {/* Team (inline edit) */}
                   <td className="px-3 py-2.5">
-                    {(call.assignedTeam && call.assignedTeam.length > 0)
-                      ? (Array.isArray(call.assignedTeam) ? call.assignedTeam.join(', ') : call.assignedTeam)
+                    {(call.assignedTeams && call.assignedTeams.length > 0)
+                      ? (Array.isArray(call.assignedTeams) ? call.assignedTeams.join(', ') : call.assignedTeams)
                       : (call.detachedTeams?.map(d => d.team).join(', ') || 'Walkup')}
                   </td>
+
                   {/* Options Ellipsis */}
                   <td className="px-3 py-2.5 text-right">
-                    <Dropdown placement="bottom-end" offset={6}>
-                      <DropdownTrigger>
-                        <button
-                          className="p-0 m-0 border-0 bg-transparent text-surface-light hover:text-status-blue transition-colors cursor-pointer flex items-center justify-center"
-                          aria-label="Call actions"
-                          type="button"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <MoreVertical className="w-4 h-4" />
-                        </button>
-                      </DropdownTrigger>
-                      <DropdownMenu aria-label="Call actions">
-                        <DropdownItem 
-                          key="showLog"
-                          onPress={() => setOpenClinicCallId(openClinicCallId === call.id ? null : call.id)}
-                        >
-                          {openClinicCallId === call.id ? 'Hide Log' : 'Show Log'}
-                        </DropdownItem>
-                        <DropdownItem 
-                          key="delete"
-                          className="text-danger"
-                          color="danger"
-                          onPress={async () => {
-                            if (confirm('Are you sure you want to delete this call? This action cannot be undone.')) {
-                              const updatedCalls = event.calls.filter((c: Call) => c.id !== call.id);
-                              await updateEvent({ calls: updatedCalls });
-                            }
-                          }}
-                        >
-                          Delete Call
-                        </DropdownItem>
-                      </DropdownMenu>
-                    </Dropdown>
+                    <OptionEllipsis
+                      deleteFn={async () => {
+                        const updatedCalls = event.calls.filter((c: Call) => c.id !== call.id);
+                        await updateEvent({ calls: updatedCalls });
+                      }}
+                      showLogFn={() => setOpenClinicCallId(openClinicCallId === call.id ? null : call.id)}
+                      show={openClinicCallId === call.id}
+                    />
                   </td>
                 </tr>
 
@@ -359,12 +404,9 @@ export default function ClinicTrackingTable({
                       onClick={() => setOpenClinicCallId(null)}
                     >
                       <div className="cursor-pointer">
-                        {call.priority && (
-                          <div className="bg-status-red text-surface-light p-2 mb-2 rounded">
-                            ⚠️ PRIORITY CALL: Life threat to patient/provider
-                          </div>
-                        )}
-                        
+
+                        <CriticalPriorityBanner priority={call.priority} />
+
                         {/* Notes - Using HeroUI Textarea - NO LOG ENTRY */}
                         <div
                           className="mt-1 mb-3 text-sm text-surface-light"
@@ -381,10 +423,10 @@ export default function ClinicTrackingTable({
                               const text = notesTexts[call.id] ?? '';
                               const callNow = event?.calls.find((c: Call) => c.id === call.id);
                               if (!callNow) return;
-                              
+
                               if ((callNow.notes || '') !== text) {
                                 const updatedCall = { ...callNow, notes: text };
-                                const updated = event!.calls.map((c: Call) => 
+                                const updated = event!.calls.map((c: Call) =>
                                   c.id === call.id ? updatedCall : c
                                 );
                                 await updateEvent({ calls: updated });
@@ -404,59 +446,59 @@ export default function ClinicTrackingTable({
                           />
                         </div>
 
-                        
+
                         {/* Log - Using HeroUI ScrollShadow */}
                         <div onClick={(e) => e.stopPropagation()}>
                           <strong>Log for Call #{callDisplayNumberMap.get(call.id)}:</strong>
-                            <Textarea
-                              value={logTexts[call.id] ?? (() => {
-                                if (call.log && call.log.length > 0) {
-                                  return call.log.map((entry: CallLogEntry) => entry.message).join('\n');
-                                }
-                                return '';
-                              })()}
-                              onChange={(e) => {
-                                setLogTexts(prev => ({ ...prev, [call.id]: e.target.value }));
-                              }}
-                              onBlur={async () => {
-                                logFocusedRef.current = null;
-                                const text = logTexts[call.id] ?? '';
-                                const callNow = event?.calls.find((c: Call) => c.id === call.id);
-                                if (!callNow) return;
-                                
-                                // Convert text back to log entries
-                                const lines = text.split('\n').filter(line => line.trim());
-                                const newLog: CallLogEntry[] = lines.map(line => ({
-                                  timestamp: Date.now(),
-                                  message: line
-                                }));
-                                
-                                const updatedCall = { ...callNow, log: newLog };
-                                const updated = event!.calls.map((c: Call) => 
-                                  c.id === call.id ? updatedCall : c
-                                );
-                                await updateEvent({ calls: updated });
-                              }}
-                              onFocus={() => {
-                                logFocusedRef.current = call.id;
-                              }}
-                              onKeyDown={(e) => {
-                                if (e.key === 'Enter' && !e.shiftKey) {
-                                  e.preventDefault();
-                                  const now = new Date();
-                                  const hhmm = now.getHours().toString().padStart(2, '0') + now.getMinutes().toString().padStart(2, '0');
-                                  setLogTexts(prev => ({ ...prev, [call.id]: (prev[call.id] || '') + `\n${hhmm} - ` }));
-                                }
-                              }}
-                              minRows={4}
-                              variant="flat"
-                              placeholder="No log entries"
-                              className="min-w-0"
-                              classNames={{
-                                input: "text-surface-light bg-surface-deep outline-none focus:outline-none data-[focus=true]:outline-none focus:ring-0 focus-visible:ring-0 text-sm",
-                                inputWrapper: "bg-surface-deep shadow-none border border-surface-liner hover:bg-surface-liner group-data-[focus=true]:bg-surface-deep group-data-[focus-visible=true]:bg-surface-deep group-data-[focus-visible=true]:ring-0 group-data-[focus-visible=true]:ring-offset-0 focus-within:ring-0"
-                              }}
-                            />
+                          <Textarea
+                            value={logTexts[call.id] ?? (() => {
+                              if (call.log && call.log.length > 0) {
+                                return call.log.map((entry: CallLogEntry) => entry.message).join('\n');
+                              }
+                              return '';
+                            })()}
+                            onChange={(e) => {
+                              setLogTexts(prev => ({ ...prev, [call.id]: e.target.value }));
+                            }}
+                            onBlur={async () => {
+                              logFocusedRef.current = null;
+                              const text = logTexts[call.id] ?? '';
+                              const callNow = event?.calls.find((c: Call) => c.id === call.id);
+                              if (!callNow) return;
+
+                              // Convert text back to log entries
+                              const lines = text.split('\n').filter(line => line.trim());
+                              const newLog: CallLogEntry[] = lines.map(line => ({
+                                timestamp: Date.now(),
+                                message: line
+                              }));
+
+                              const updatedCall = { ...callNow, log: newLog };
+                              const updated = event!.calls.map((c: Call) =>
+                                c.id === call.id ? updatedCall : c
+                              );
+                              await updateEvent({ calls: updated });
+                            }}
+                            onFocus={() => {
+                              logFocusedRef.current = call.id;
+                            }}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter' && !e.shiftKey) {
+                                e.preventDefault();
+                                const now = new Date();
+                                const hhmm = now.getHours().toString().padStart(2, '0') + now.getMinutes().toString().padStart(2, '0');
+                                setLogTexts(prev => ({ ...prev, [call.id]: (prev[call.id] || '') + `\n${hhmm} - ` }));
+                              }
+                            }}
+                            minRows={4}
+                            variant="flat"
+                            placeholder="No log entries"
+                            className="min-w-0"
+                            classNames={{
+                              input: "text-surface-light bg-surface-deep outline-none focus:outline-none data-[focus=true]:outline-none focus:ring-0 focus-visible:ring-0 text-sm",
+                              inputWrapper: "bg-surface-deep shadow-none border border-surface-liner hover:bg-surface-liner group-data-[focus=true]:bg-surface-deep group-data-[focus-visible=true]:bg-surface-deep group-data-[focus-visible=true]:ring-0 group-data-[focus-visible=true]:ring-offset-0 focus-within:ring-0"
+                            }}
+                          />
                         </div>
                       </div>
                     </td>
@@ -467,7 +509,7 @@ export default function ClinicTrackingTable({
           </tbody>
         </table>
       </div>
-      
+
       <div className="flex justify-center pt-3">
         <button
           onClick={() => setShowResolvedClinicCalls(prev => !prev)}
@@ -477,6 +519,6 @@ export default function ClinicTrackingTable({
           {showResolvedClinicCalls ? 'Hide Resolved Clinic Calls' : 'Show Resolved Clinic Calls'}
         </button>
       </div>
-    </div>
+    </div >
   );
 }

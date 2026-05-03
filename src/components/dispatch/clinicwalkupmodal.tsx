@@ -10,15 +10,15 @@ import {
   ModalFooter,
   Button,
   Input,
+  SelectItem,
+  Select,
+  SharedSelection,
+  SelectedItems,
 } from "@heroui/react";
 
-import { Event, Call } from "@/app/types";
+import { Event, Call, Priority, QuickClinicCall } from "@/app/types";
+import ColorChip from "@/components/modals/event/colorchip";
 
-type ClinicCallState = {
-  age: string;
-  gender: string;
-  chiefComplaint: string;
-};
 
 type Props = {
   isOpen: boolean;
@@ -26,11 +26,13 @@ type Props = {
   event?: Event | null;
   updateEvent: (data: Partial<Event>) => Promise<void>;
 
-  clinicCall: ClinicCallState;
-  setClinicCall: React.Dispatch<React.SetStateAction<ClinicCallState>>;
+  clinicCall: QuickClinicCall;
+  setClinicCall: React.Dispatch<React.SetStateAction<QuickClinicCall>>;
 
   formatAgeSex: (age?: string, gender?: string) => string;
   parseAgeSex: (raw: string) => { age: string; gender: string };
+
+  priorities: Priority[] | null;
 };
 
 export default function ClinicWalkupModal({
@@ -42,6 +44,7 @@ export default function ClinicWalkupModal({
   setClinicCall,
   formatAgeSex,
   parseAgeSex,
+  priorities
 }: Props) {
   const [submitting, setSubmitting] = React.useState(false);
 
@@ -59,8 +62,8 @@ export default function ClinicWalkupModal({
       const nextOrder =
         event?.calls?.length
           ? Math.max(
-              ...event.calls.map((c) => (typeof c.order === "number" ? c.order : 0))
-            ) + 1
+            ...event.calls.map((c) => (typeof c.order === "number" ? c.order : 0))
+          ) + 1
           : 1;
 
       const cleanCall: Call = {
@@ -68,28 +71,29 @@ export default function ClinicWalkupModal({
         order: nextOrder,
         status: "Delivered", // clinic walkups are delivered to clinic immediately
         location: "Clinic",
-        assignedTeam: [],
+        assignedTeams: [],
         chiefComplaint: clinicCall.chiefComplaint?.trim() || "Walkup",
         source: "Walkup",
         ...(clinicCall.age?.trim() && { age: clinicCall.age.trim() }),
         ...(clinicCall.gender?.trim() && { gender: clinicCall.gender.trim() }),
         clinic: true,
-        priority: false,
+        priority: clinicCall.priority,
         log: [
           {
             timestamp: now.getTime(),
-            message: `${hhmm} - Clinic walkup call created${
-              clinicCall.chiefComplaint ? `, complaint: ${clinicCall.chiefComplaint}` : ""
-            }, age/sex: ${formatAgeSex(clinicCall.age, clinicCall.gender) || "N/A"}`,
+            message: `${hhmm} - Clinic walkup call created${clinicCall.chiefComplaint ? `, complaint: ${clinicCall.chiefComplaint}` : ""
+              }, age/sex: ${formatAgeSex(clinicCall.age, clinicCall.gender) || "N/A"}`,
           },
         ],
+        age: clinicCall.age.trim(),
+        gender: clinicCall.gender.trim()
       };
 
       await updateEvent({
         calls: [...(event?.calls || []), cleanCall],
       });
 
-      setClinicCall({ age: "", gender: "", chiefComplaint: "" });
+      setClinicCall(QuickClinicCall.empty());
       onClose();
     } finally {
       setSubmitting(false);
@@ -129,6 +133,43 @@ export default function ClinicWalkupModal({
             </ModalHeader>
 
             <ModalBody>
+              <Select
+                label="Priority"
+                items={priorities ?? []}
+                placeholder="Select a priority"
+                defaultSelectedKeys={new Set([clinicCall.priority.id])}
+                onSelectionChange={(key: SharedSelection) => {
+                  if (!!priorities) {
+                    setClinicCall((p) => ({ ...p, priority: new Priority(key.currentKey as string, priorities[Number(key.currentKey)]?.name, priorities[Number(key.currentKey)]?.color) }));
+                  }
+                }}
+                aria-label="Priority"
+                disallowEmptySelection={false}
+                classNames={inputClassNames}
+                renderValue={(items: SelectedItems<Priority>) =>
+                  items.map((item) => (
+                    <div key={item.key} className="flex items-center gap-2">
+                      <ColorChip color={item.data?.color ?? ""} />
+                      {item.textValue}
+                    </div>
+                  ))
+                }
+                isRequired
+              >
+                {
+                  (priority) => (
+                    <SelectItem
+                      key={priority.id}
+                      textValue={`P${priority.id} - ${priority.name}`}
+                      startContent={
+                        ColorChip({ color: priority.color })
+                      }
+                    >
+                      P{priority.id} - {priority.name}
+                    </SelectItem>
+                  )
+                }
+              </Select>
               <Input
                 autoFocus
                 label="Age/Sex"
@@ -184,6 +225,6 @@ export default function ClinicWalkupModal({
           </form>
         )}
       </ModalContent>
-    </Modal>
+    </Modal >
   );
 }

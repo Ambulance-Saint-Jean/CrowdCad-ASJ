@@ -16,7 +16,8 @@ import AddTeamModal from '@/components/modals/event/addteammodal';
 import AddSupervisorModal from '@/components/modals/event/addsupervisormodal';
 import LoadingScreen from '@/components/ui/loading-screen';
 import { Panel, PanelGroup, PanelResizeHandle } from 'react-resizable-panels';
-import useListCollection from '@/hooks/useListCollection';
+import useGetCultureDoc from '@/hooks/useGetCultureDoc';
+import { roleMapper } from '@/lib/mappers';
 
 // Helper to get post name regardless of type
 const getPostName = (post: Post): string => {
@@ -143,10 +144,10 @@ export default function EventCreation() {
       try {
         const docRef = doc(db, 'events', eventId);
         await updateDoc(docRef, stripUndefined({ postingTimes: times }));
-        // eslint-disable-next-line no-console
+         
         console.log('Autosaved postingTimes to draft:', { eventId, postingTimes: times });
       } catch (err) {
-        // eslint-disable-next-line no-console
+         
         console.error('Failed to autosave postingTimes:', err);
       }
     }, 600);
@@ -273,7 +274,7 @@ export default function EventCreation() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const { data: roles }: { data: Role[] } = useListCollection<Role>('roles');
+  const { data: roles }: { data: Role[] | null } = useGetCultureDoc<Role[]>('roles', roleMapper);
 
 
   const handleAddTeam = () => {
@@ -381,7 +382,7 @@ export default function EventCreation() {
       };
 
       const computedTimes = computePostingTimes();
-      // eslint-disable-next-line no-console
+       
       console.log('handleSubmit computed postingTimes:', computedTimes, 'eventData.postingTimes:', eventData.postingTimes);
 
       let eventDocId = eventId;
@@ -398,7 +399,7 @@ export default function EventCreation() {
               updatedAt: new Date().toISOString(),
               status: 'active',
             }));
-            // eslint-disable-next-line no-console
+             
             console.log('Event updated:', { eventId: eventDocId, postingTimes: eventData.postingTimes || [] });
           } else {
             const newDocRef = await addDoc(collection(db, 'events'), stripUndefined({
@@ -410,7 +411,7 @@ export default function EventCreation() {
               status: 'active',
             }));
             eventDocId = newDocRef.id;
-            // eslint-disable-next-line no-console
+             
             console.log('Event created (branch new):', { eventId: eventDocId, postingTimes: eventData.postingTimes || [] });
           }
         } catch (error) {
@@ -423,7 +424,7 @@ export default function EventCreation() {
             status: 'active',
           }));
           eventDocId = newDocRef.id;
-          // eslint-disable-next-line no-console
+           
           console.log('Event created (catch):', { eventId: eventDocId, postingTimes: eventData.postingTimes || [] });
         }
       } else {
@@ -435,7 +436,7 @@ export default function EventCreation() {
           status: 'active',
         }));
         eventDocId = docRef.id;
-        // eslint-disable-next-line no-console
+         
         console.log('Event created (no eventId):', { eventId: eventDocId, postingTimes: eventData.postingTimes || [] });
       }
       router.push(`/events/${eventDocId}/dispatch`);

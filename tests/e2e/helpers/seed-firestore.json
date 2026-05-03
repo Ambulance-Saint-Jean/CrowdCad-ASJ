@@ -1,12 +1,51 @@
 {
     "roles": [
         {
-            "name": "FR",
-            "fullName": "First Responder"
-        },
+            "ref": "en-CA",
+            "data": {
+                "0": {
+                    "name": "FR",
+                    "fullName": "First Responder"
+                },
+                "1": {
+                    "name": "FA",
+                    "fullName": "First Aid"
+                }
+            }
+        }
+    ],
+    "constants": [
         {
-            "name": "FA",
-            "fullName": "First Aid"
+            "ref": "colors",
+            "data": {
+                "0": "#CC0000",
+                "1": "#FF6B00",
+                "2": "#FFB300",
+                "3": "#42A5F5"
+            }
+        }
+    ],
+    "priorities": [
+        {
+            "ref": "en-CA",
+            "data": {
+                "0": {
+                    "name": "Critical",
+                    "color": "/constants/colors"
+                },
+                "1": {
+                    "name": "High",
+                    "color": "/constants/colors"
+                },
+                "2": {
+                    "name": "Medium",
+                    "color": "/constants/colors"
+                },
+                "3": {
+                    "name": "Low",
+                    "color": "/constants/colors"
+                }
+            }
         }
     ]
 }

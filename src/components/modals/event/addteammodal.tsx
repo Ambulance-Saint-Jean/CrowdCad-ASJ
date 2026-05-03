@@ -47,7 +47,7 @@ type Props = {
   currentMembers: Member[];
   removeMember: (idx: number) => void;
 
-  roles: Role[]; // e.g., [{ name: "EMT", fullName: "Emergency Medical Technician" }, ...]
+  roles: Role[] | null;
 };
 
 export default function AddTeamModal({
@@ -169,6 +169,7 @@ export default function AddTeamModal({
                   variant="bordered"
                   size="lg"
                   radius="lg"
+                  items={roles ?? []}
                   classNames={selectClassNames}
                   selectedKeys={memberCert ? new Set([memberCert]) : new Set()}
                   onSelectionChange={(keys) => {
@@ -178,11 +179,13 @@ export default function AddTeamModal({
                   aria-label="Certification"
                   className="flex-1"
                 >
-                  {roles.map((role) => (
-                    <SelectItem key={role.name} aria-label={role.fullName} textValue={role.fullName}>
-                      {role.name}
-                    </SelectItem>
-                  ))}
+                  {
+                    (role) => (
+                      <SelectItem key={role.name} aria-label={role.fullName} textValue={role.fullName}>
+                        {role.name}
+                      </SelectItem>
+                    )
+                  }
                 </Select>
 
                 <Button

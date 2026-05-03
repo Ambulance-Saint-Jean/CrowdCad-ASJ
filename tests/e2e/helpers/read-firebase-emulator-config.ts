@@ -21,7 +21,7 @@ const DEFAULT_PORTS: Record<"storage" | "firestore" | "auth", number> = {
 };
 
 
-export function getConfig(type: "storage" | "firestore" | "auth"): { fqdn: string, host: string, port: number } {
+export function getConfig(type: "storage" | "firestore" | "auth"): { full: string, host: string, port: number } {
     const { emulators }: FirebaseEmulatorConfig = firebaseEmulatorConf
 
     const emulator = emulators?.[type];
@@ -29,7 +29,7 @@ export function getConfig(type: "storage" | "firestore" | "auth"): { fqdn: strin
     const port = emulator?.port ?? DEFAULT_PORTS[type];
 
     return {
-        fqdn: `http://${host}:${port}`,
+        full: `${host}:${port}`,
         host,
         port
     }

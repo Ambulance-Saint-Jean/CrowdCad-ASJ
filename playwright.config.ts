@@ -52,25 +52,27 @@ export default defineConfig({
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
     video: 'on-first-retry',
+    locale: 'en-CA',
   },
 
   webServer: [
     {
-      command: 'npx firebase emulators:start --only auth,firestore,storage --project demo-crowdcad',
+      command: 'npx firebase emulators:start --only auth,firestore,storage --import tests/e2e/emulator/data --project demo-crowdcad',
+      url: "http://localhost:9099",
       reuseExistingServer: !process.env.CI,
       timeout: 120_000,
       stdout: 'pipe',
       stderr: 'pipe',
     },
     {
-      command: 'next build && next start',
+      command: 'npx next build && npx next start',
       env: {
         NEXT_PUBLIC_USE_FIREBASE_EMULATOR: 'true',
         NEXT_PUBLIC_USE_FIRESTORE_EMULATOR: 'true',
         NEXT_PUBLIC_FIREBASE_API_KEY: 'fake-api-key',
         NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: 'localhost',
         NEXT_PUBLIC_FIREBASE_PROJECT_ID: 'demo-crowdcad',
-        NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: 'demo-crowdcad.appspot.com',
+        NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: 'demo-crowdcaFd.appspot.com',
         NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: '000000000000',
         NEXT_PUBLIC_FIREBASE_APP_ID: '1:000000000000:web:fake',
       },
@@ -110,6 +112,6 @@ export default defineConfig({
     },
   ],
 
-  globalSetup: './tests/e2e/global-setup.ts',
-  globalTeardown: './tests/e2e/global-teardown.ts',
+  // globalSetup: './tests/e2e/global-setup.ts',
+  // globalTeardown: './tests/e2e/global-teardown.ts',
 });

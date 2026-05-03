@@ -7,7 +7,9 @@ import {
   Dropdown, DropdownTrigger, DropdownMenu, DropdownItem, Textarea
 } from '@heroui/react';
 import { MoreVertical } from 'lucide-react';
-import type { Event, Call } from '@/app/types';
+import { Event, Call, CallLogEntry, LogEntry } from '@/app/types';
+import CriticalPriorityBanner from '../modals/event/criticalprioritybanner';
+import OptionEllipsis from './optionellipsis';
 
 type ClinicTrackingCardProps = {
   call: Call;
@@ -19,7 +21,6 @@ type ClinicTrackingCardProps = {
   onOutcomeChange: (callId: string, outcome: string) => void;
   handleDeleteCall: (callId: string) => void;
   formatAgeSex: (age?: string | number, gender?: string) => string;
-  getCallRowClass: (call: Call) => string;
   updateEvent: (updates: Partial<Event>) => Promise<void>;
 };
 
@@ -37,7 +38,7 @@ function useMMSS(since?: number) {
   return `${mm}:${ss}`;
 }
 
-function callBg(call: Call) {
+function callBg() {
   // Clinic calls always use default background
   return 'bg-surface-deep';
 }
@@ -52,7 +53,6 @@ export default function ClinicTrackingCard({
   onOutcomeChange,
   handleDeleteCall,
   formatAgeSex,
-  getCallRowClass,
   updateEvent,
 }: ClinicTrackingCardProps) {
   const [expanded, setExpanded] = useState(false);
@@ -64,7 +64,7 @@ export default function ClinicTrackingCard({
   const notesFocusedRef = useRef(false);
   const [logText, setLogText] = useState(() => {
     if (call.log && call.log.length > 0) {
-      return call.log.map((entry: {timestamp: number; message: string}) => entry.message).join('\n');
+      return call.log.map((entry: CallLogEntry) => entry.message).join('\n');
     }
     return '';
   });
@@ -93,7 +93,7 @@ export default function ClinicTrackingCard({
   useEffect(() => {
     if (!logFocusedRef.current) {
       const newText = call.log && call.log.length > 0
-        ? call.log.map((entry: {timestamp: number; message: string}) => entry.message).join('\n')
+        ? call.log.map((entry: CallLogEntry) => entry.message).join('\n')
         : '';
       setLogText(newText);
     }
@@ -108,30 +108,30 @@ export default function ClinicTrackingCard({
   }, [call.log]);
 
   const timer = useMMSS(callTimestamp);
-  const bg = callBg(call);
+  const bg = callBg();
 
   // Get primary team (first assigned team or first detached team)
   const primaryTeam = useMemo(() => {
-    if (call.assignedTeam && call.assignedTeam.length > 0) {
-      return Array.isArray(call.assignedTeam) ? call.assignedTeam[0] : call.assignedTeam;
+    if (call.assignedTeams && call.assignedTeams.length > 0) {
+      return Array.isArray(call.assignedTeams) ? call.assignedTeams[0] : call.assignedTeams;
     }
     if (call.detachedTeams && call.detachedTeams.length > 0) {
       return call.detachedTeams[0].team;
     }
     return 'Walkup';
-  }, [call.assignedTeam, call.detachedTeams]);
+  }, [call.assignedTeams, call.detachedTeams]);
 
   return (
     <Card className={`rounded-2xl shadow-sm border-0 ${bg}`}>
       {/* HEADER */}
-      <CardHeader 
+      <CardHeader
         onClick={() => setExpanded(v => !v)}
         className="relative flex items-center justify-between px-4 py-3 pb-0 cursor-pointer select-none"
       >
         <div className="text-[15px] sm:text-base font-semibold text-surface-light">
           Call {callDisplayNumber}
         </div>
-        
+
         {/* Right section: Timer and Menu aligned horizontally */}
         <div className="absolute top-3 right-3 flex items-center gap-2">
           {/* Timer */}
@@ -141,37 +141,11 @@ export default function ClinicTrackingCard({
 
           {/* 3-dot menu */}
           <div onClick={e => e.stopPropagation()} onKeyDown={e => e.stopPropagation()}>
-            <Dropdown placement="bottom-end" offset={6}>
-              <DropdownTrigger>
-                <button
-                  className="p-0 m-0 border-0 bg-transparent text-surface-light hover:text-status-blue transition-colors cursor-pointer flex items-center justify-center"
-                  aria-label="Call actions"
-                  type="button"
-                >
-                  <MoreVertical className="h-4 w-4" />
-                </button>
-              </DropdownTrigger>
-              <DropdownMenu aria-label="Call actions">
-                <DropdownItem 
-                  key="showLog"
-                  onPress={() => setExpanded(v => !v)}
-                >
-                  {expanded ? 'Hide Log' : 'Show Log'}
-                </DropdownItem>
-                <DropdownItem 
-                  key="delete"
-                  className="text-danger"
-                  color="danger"
-                  onPress={() => {
-                    if (confirm('Are you sure you want to delete this call? This action cannot be undone.')) {
-                      handleDeleteCall(call.id);
-                    }
-                  }}
-                >
-                  Delete Call
-                </DropdownItem>
-              </DropdownMenu>
-            </Dropdown>
+            <OptionEllipsis
+              deleteFn={() => handleDeleteCall(call.id)}
+              show={expanded}
+              showLogFn={() => setExpanded(v => !v)}
+            />
           </div>
         </div>
       </CardHeader>
@@ -210,7 +184,7 @@ export default function ClinicTrackingCard({
             label="Age/Sex"
             labelPlacement="inside"
             value={ageSexInput}
-            onChange={(e) => setAgeSexInput(e.target.value)}
+            onChange={(e) => { setAgeSexInput(e.target.value) }}
             onBlur={() => {
               if (ageSexInput !== formatAgeSex(call.age, call.gender)) {
                 onAgeSexChange(call.id, ageSexInput);
@@ -293,11 +267,8 @@ export default function ClinicTrackingCard({
         {/* Expanded section: Notes and Log */}
         {expanded && (
           <div className="pt-3 border-t border-surface-liner space-y-3" onClick={e => e.stopPropagation()}>
-            {call.priority && (
-              <div className="bg-status-red text-surface-light p-2 rounded">
-                ⚠️ PRIORITY CALL: Life threat to patient/provider
-              </div>
-            )}
+
+            <CriticalPriorityBanner priority={call.priority} />
 
             {/* Notes - NO LOG ENTRY */}
             <div className="text-sm text-surface-light">
@@ -312,7 +283,7 @@ export default function ClinicTrackingCard({
                   const text = notesText;
                   if ((call.notes || '') !== text) {
                     const updatedCall = { ...call, notes: text };
-                    const updated = event.calls.map((c: Call) => 
+                    const updated = event.calls.map((c: Call) =>
                       c.id === call.id ? updatedCall : c
                     );
                     await updateEvent({ calls: updated });
@@ -343,16 +314,13 @@ export default function ClinicTrackingCard({
                 onBlur={async () => {
                   logFocusedRef.current = false;
                   const text = logText;
-                  
+
                   // Convert text back to log entries
                   const lines = text.split('\n').filter(line => line.trim());
-                  const newLog = lines.map(line => ({
-                    timestamp: Date.now(),
-                    message: line
-                  }));
-                  
+                  const newLog = lines.map(line => new LogEntry(line));
+
                   const updatedCall = { ...call, log: newLog };
-                  const updated = event.calls.map((c: Call) => 
+                  const updated = event.calls.map((c: Call) =>
                     c.id === call.id ? updatedCall : c
                   );
                   await updateEvent({ calls: updated });
@@ -363,9 +331,7 @@ export default function ClinicTrackingCard({
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' && !e.shiftKey) {
                     e.preventDefault();
-                    const now = new Date();
-                    const hhmm = now.getHours().toString().padStart(2, '0') + now.getMinutes().toString().padStart(2, '0');
-                    setLogText(prev => prev + `\n${hhmm} - `);
+                    setLogText(prev => prev + `\n` + new LogEntry());
                   }
                 }}
                 minRows={4}

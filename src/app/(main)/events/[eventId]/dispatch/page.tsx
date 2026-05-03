@@ -10,7 +10,7 @@ import AddSupervisorModal from "@/components/modals/event/addsupervisormodal";
 import React from 'react';
 import { doc, onSnapshot, runTransaction } from 'firebase/firestore';
 import { db } from '@/app/firebase';
-import { PostAssignment, Event, Staff, Supervisor, Call, EquipmentStatus, CallLogEntry, TeamLogEntry, EquipmentItem, EventEquipment, ClinicOutcome, Role } from '@/app/types';
+import { PostAssignment, Event, Staff, Supervisor, Call, EquipmentStatus, EquipmentItem, EventEquipment, ClinicOutcome, Role, Priority, QuickCall, QuickClinicCall, LogEntry } from '@/app/types';
 import { toast, Slide } from 'react-toastify';
 import { useRouter } from 'next/navigation';
 import isEqual from 'lodash.isequal';
@@ -34,7 +34,8 @@ interface DispatchPageProps {
 }
 
 import ReactDOM from 'react-dom';
-import useListCollection from '@/hooks/useListCollection';
+import useGetCultureDoc from '@/hooks/useGetCultureDoc';
+import { priorityMapper, roleMapper } from '@/lib/mappers';
 
 interface PortalDropdownProps {
   anchorRef: RefObject<HTMLElement>;
@@ -91,26 +92,6 @@ function PortalDropdown({
   );
 }
 
-// function StatusTimer({ since }: { since: number })  {
-//   const [elapsed, setElapsed] = React.useState(0);
-
-//   React.useEffect(() => {
-//     setElapsed(Math.floor((Date.now() - since) / 1000));
-//     const interval = setInterval(() => {
-//       setElapsed(Math.floor((Date.now() - since) / 1000));
-//     }, 1000);
-//     return () => clearInterval(interval);
-//   }, [since]);
-
-//   const minutes = Math.floor(elapsed / 60);
-//   const seconds = elapsed % 60;
-//   return (
-//     <span>
-//       {minutes.toString().padStart(2, '0')}:{seconds.toString().padStart(2, '0')}
-//     </span>
-//   );
-// }
-
 interface TeamWidgetProps {
   staff: Staff;
   event: Event;
@@ -162,33 +143,18 @@ const AUTO_POST_SYNC = false;
 export default function DispatchPage({ params }: DispatchPageProps) {
   const [event, setEvent] = useState<Event | undefined>(undefined);
   const [postAssignments, setPostAssignments] = useState<PostAssignment>({});
-  // const handleBulkPostAssignment = (newAssignments: PostAssignment) => {
-  //   setPostAssignments(newAssignments);
-  // };
   const { eventId } = use(params);
   const { user, ready } = useAuth();
   const router = useRouter();
   const [openCallId, setOpenCallId] = useState<string | null>(null);
   const [openClinicCallId, setOpenClinicCallId] = useState<string | null>(null);
   const [, setTeamToAdd] = useState<{ [callId: string]: string }>({});
-  // const [addMenuType, setAddMenuType] = useState<{ [callId: string]: 'main' | 'team' | 'supervisor' | 'equipment' }>({});
   const [showQuickCallForm, setShowQuickCallForm] = useState(false);
   const quickCallRef = useRef<HTMLFormElement>(null);
   const [showAddTeamModal, setShowAddTeamModal] = useState(false);
   const [showEditTeamModal, setShowEditTeamModal] = useState(false);
-  const [quickCall, setQuickCall] = useState({
-    location: '',
-    source: '',
-    age: '',
-    gender: '',
-    chiefComplaint: '',
-    assignedTeam: '',
-  });
-  const [clinicCall, setClinicCall] = useState({
-    age: '',
-    gender: '',
-    chiefComplaint: '',
-  });
+  const [quickCall, setQuickCall] = useState<QuickCall>(QuickCall.empty());
+  const [clinicCall, setClinicCall] = useState<QuickClinicCall>(QuickClinicCall.empty());
   const [teamName, setTeamName] = useState('');
   const [memberName, setMemberName] = useState('');
   const [memberCert, setMemberCert] = useState('');
@@ -215,6 +181,9 @@ export default function DispatchPage({ params }: DispatchPageProps) {
   const [showQuickClinicCallForm, setShowQuickClinicCallForm] = useState(false);
   const [showDebugModal, setShowDebugModal] = useState(false);
 
+  const { data: priorities } = useGetCultureDoc<Priority[]>("priorities", priorityMapper);
+
+
   // Configure admin emails here or load from environment / Firestore for your deployment.
   const ADMIN_EMAILS: string[] = [];
   const isAdmin = user?.email && ADMIN_EMAILS.includes(user.email);
@@ -229,6 +198,7 @@ export default function DispatchPage({ params }: DispatchPageProps) {
     const nextTime = sortedTimes[index + 1];
     return currentHHMM >= timeSlot && (!nextTime || currentHHMM < nextTime);
   };
+
 
   const updateEvent = useCallback(async (
     updateInput: Partial<Event> | ((current: Event) => Partial<Event>)
@@ -399,11 +369,10 @@ export default function DispatchPage({ params }: DispatchPageProps) {
 
   const handlePopulateTestData = useCallback(async () => {
     if (!event) return;
-    const now = Date.now();
     const testTeams: Staff[] = [
-      { team: 'Alpha', members: ['Test User [EMT]'], status: 'Available', location: 'Roaming', log: [{ timestamp: now, message: 'Test data populated' }], originalPost: 'Roaming' },
-      { team: 'Bravo', members: ['Test User [Paramedic]'], status: 'Available', location: 'Roaming', log: [{ timestamp: now, message: 'Test data populated' }], originalPost: 'Roaming' },
-      { team: 'Charlie', members: ['Test User [RN]'], status: 'Available', location: 'Roaming', log: [{ timestamp: now, message: 'Test data populated' }], originalPost: 'Roaming' }
+      { team: 'Alpha', members: ['Test User [EMT]'], status: 'Available', location: 'Roaming', log: [new LogEntry('Test data populated')], originalPost: 'Roaming' },
+      { team: 'Bravo', members: ['Test User [Paramedic]'], status: 'Available', location: 'Roaming', log: [new LogEntry('Test data populated')], originalPost: 'Roaming' },
+      { team: 'Charlie', members: ['Test User [RN]'], status: 'Available', location: 'Roaming', log: [new LogEntry('Test data populated')], originalPost: 'Roaming' }
     ];
 
     const currentTeamNames = new Set((event.staff || []).map(s => s.team));
@@ -420,14 +389,12 @@ export default function DispatchPage({ params }: DispatchPageProps) {
 
   const handleResetAllStatuses = useCallback(async () => {
     if (!event) return;
-    const now = Date.now();
-    const hhmm = new Date().getHours().toString().padStart(2, '0') + new Date().getMinutes().toString().padStart(2, '0');
 
     const updatedStaff = (event.staff || []).map(s => ({
       ...s,
       status: 'Available',
       location: 'Roaming',
-      log: [...(s.log || []), { timestamp: now, message: `${hhmm} - Admin Reset: Status set to Available` }]
+      log: [...(s.log || []), new LogEntry(`Admin Reset: Status set to Available`)]
     }));
 
     await updateEvent({ staff: updatedStaff });
@@ -438,17 +405,16 @@ export default function DispatchPage({ params }: DispatchPageProps) {
     if (!event) return;
     if (!window.confirm("WARNING: This will delete ALL calls and reset ALL logs. Staff will be kept but history wiped. Continue?")) return;
 
-    const now = Date.now();
     const updatedStaff = (event.staff || []).map(s => ({
       ...s,
-      log: [{ timestamp: now, message: 'System logs cleared by Admin' }],
+      log: [new LogEntry('System logs cleared by Admin')],
       status: 'Available',
       location: 'Roaming'
     }));
 
     const updatedSupervisors = (event.supervisor || []).map(s => ({
       ...s,
-      log: [{ timestamp: now, message: 'System logs cleared by Admin' }],
+      log: [new LogEntry('System logs cleared by Admin')],
       status: 'Available',
       location: 'Roaming'
     }));
@@ -554,15 +520,12 @@ export default function DispatchPage({ params }: DispatchPageProps) {
     // Build the single-line member string (name may be empty)
     const memberString = `${name || 'Supervisor'} [${cert}]`;
 
-    const now = new Date();
-    const hhmm = now.getHours().toString().padStart(2, '0') + now.getMinutes().toString().padStart(2, '0');
-
     const newSupervisor: Supervisor = {
       team: callSign,
       member: memberString,
       status: 'Available',
       location: 'Roaming',
-      log: [{ timestamp: now.getTime(), message: `${hhmm} - supervisor created` }],
+      log: [new LogEntry(`supervisor created`)],
       originalPost: 'Roaming',
     };
 
@@ -621,9 +584,6 @@ export default function DispatchPage({ params }: DispatchPageProps) {
 
     const memberString = `${name || 'Supervisor'} [${cert}]`;
 
-    const now = new Date();
-    const hhmm = now.getHours().toString().padStart(2, '0') + now.getMinutes().toString().padStart(2, '0');
-
     const updatedSupervisor = (event.supervisor || []).map(s => {
       if (s.team !== editSupervisorOriginalName) return s;
       return {
@@ -632,11 +592,7 @@ export default function DispatchPage({ params }: DispatchPageProps) {
         member: memberString,
         log: [
           ...(s.log || []),
-          {
-            timestamp: now.getTime(),
-            message: `${hhmm} - supervisor edited${editSupervisorOriginalName !== newCallSign ? ` (renamed from ${editSupervisorOriginalName})` : ''
-              }`,
-          },
+          new LogEntry(`supervisor edited${editSupervisorOriginalName !== newCallSign ? ` (renamed from ${editSupervisorOriginalName})` : ''}`)
         ],
       };
     });
@@ -689,7 +645,7 @@ export default function DispatchPage({ params }: DispatchPageProps) {
         members: membersStrings,
         status: 'Available',
         location: '',
-        log: [{ timestamp: Date.now(), message: 'Team created' }]
+        log: [new LogEntry('Team created')]
       };
 
       return { staff: [...(currentEvent.staff || []), staffEntry] };
@@ -737,9 +693,6 @@ export default function DispatchPage({ params }: DispatchPageProps) {
 
     const membersStrings = currentMembers.map(m => `${m.name} [${m.cert}]${m.lead ? ' (Lead)' : ''}`);
 
-    const now = new Date();
-    const hhmm = now.getHours().toString().padStart(2, '0') + now.getMinutes().toString().padStart(2, '0');
-
     const updatedStaff = (event.staff || []).map(s => {
       if (s.team !== oldName) return s;
       return {
@@ -748,13 +701,13 @@ export default function DispatchPage({ params }: DispatchPageProps) {
         members: membersStrings,
         log: [
           ...(s.log || []),
-          { timestamp: now.getTime(), message: `${hhmm} - team edited${oldName !== newName ? ` (renamed from ${oldName})` : ''}` }
+          new LogEntry(`team edited${oldName !== newName ? ` (renamed from ${oldName})` : ''}`)
         ]
       };
     });
 
     const updatedCalls = oldName !== newName ? (event.calls || []).map(c => {
-      let assignedTeam = c.assignedTeam || [];
+      let assignedTeam = c.assignedTeams || [];
       let detachedTeams = c.detachedTeams || [];
 
       if (assignedTeam.includes(oldName)) {
@@ -764,7 +717,7 @@ export default function DispatchPage({ params }: DispatchPageProps) {
         detachedTeams = detachedTeams.map(dt => dt.team === oldName ? { ...dt, team: newName } : dt);
       }
 
-      return (assignedTeam !== c.assignedTeam || detachedTeams !== c.detachedTeams)
+      return (assignedTeam !== c.assignedTeams || detachedTeams !== c.detachedTeams)
         ? { ...c, assignedTeam, detachedTeams }
         : c;
     }) : event.calls;
@@ -785,24 +738,18 @@ export default function DispatchPage({ params }: DispatchPageProps) {
   const handleDeleteTeam = useCallback(async (teamNameToDelete: string) => {
     if (!event) return;
 
-    const now = new Date();
-    const hhmm = now.getHours().toString().padStart(2, '0') + now.getMinutes().toString().padStart(2, '0');
-
     const remainingStaff = (event.staff || []).filter(s => s.team !== teamNameToDelete);
 
     const updatedCalls = (event.calls || []).map(c => {
-      if (!c.assignedTeam?.includes(teamNameToDelete)) return c;
+      if (!c.assignedTeams?.includes(teamNameToDelete)) return c;
 
-      const newAssigned = (c.assignedTeam || []).filter(t => t !== teamNameToDelete);
+      const newAssigned = (c.assignedTeams || []).filter(t => t !== teamNameToDelete);
       const newStatus =
         newAssigned.length === 0
           ? 'Pending'
           : c.status;
 
-      const log: CallLogEntry = {
-        timestamp: now.getTime(),
-        message: `${hhmm} - ${teamNameToDelete} removed (team deleted).`
-      };
+      const log = new LogEntry(`${teamNameToDelete} removed (team deleted).`)
 
       return {
         ...c,
@@ -821,11 +768,11 @@ export default function DispatchPage({ params }: DispatchPageProps) {
   const [teamStatusMap, setTeamStatusMap] = useState<{ [callId: string]: { [team: string]: string } }>({});
 
   const getCallRowClass = (call: Call) => {
-    if (!Array.isArray(call.assignedTeam)) return 'bg-surface-deep';
+    if (!Array.isArray(call.assignedTeams)) return 'bg-surface-deep';
 
     if (!event) return 'bg-surface-deep';
 
-    const statuses = call.assignedTeam
+    const statuses = call.assignedTeams
       .map(t => event?.staff.find(s => s.team === t)?.status)
       .filter((status): status is string => status !== undefined);
 
@@ -839,94 +786,12 @@ export default function DispatchPage({ params }: DispatchPageProps) {
 
   const ACTIVE_CALL_SET = new Set(['Assigned', 'En Route', 'On Scene', 'Transporting', 'Pending']);
 
-  const commitEquipmentLocation = async (resourceName: string, newLocationRaw: string) => {
-    if (!event) return;
-    const newLocation = newLocationRaw; // allow empty
-
-    let touched = false;
-    const updatedEquipment = (event.eventEquipment || []).map(eq => {
-      if (eq.name === resourceName) {
-        touched = true;
-        const inUse = !!eq.assignedTeam;
-        return {
-          ...eq,
-          location: newLocation,
-          status: inUse ? eq.status : ('Available' as EquipmentStatus),
-        };
-      }
-      return eq;
-    });
-
-    if (!touched) {
-      updatedEquipment.push({
-        id: `eq_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
-        name: resourceName,
-        status: ('Available' as EquipmentStatus),
-        location: newLocation,
-        assignedTeam: null,
-      });
-    }
-
-    await updateEvent({ eventEquipment: updatedEquipment });
-  };
-
-
-
-  const [equipmentDraft, setEquipmentDraft] = useState<Record<string, string>>({});
-
   type EquipRow = {
     name: string;
     inUse: boolean;
     rightText: string;   // shown in the UI
-    location: string;    // raw location value (can be '')
+    location: string;    // raw  value (can be '')
   };
-
-
-  function getEquipmentRows(): EquipRow[] {
-    const venueEquipment = (event?.venue as { equipment?: (string | { name: string })[] })?.equipment ?? [];
-    const tracked = event?.eventEquipment ?? [];
-
-    const byName: Record<string, { name: string; assignedTeam?: string | null; location?: string | null; }> = {};
-
-    for (const v of venueEquipment) {
-      const name = typeof v === 'string' ? v : v?.name;
-      if (name) byName[name] = { name, assignedTeam: null, location: null };
-    }
-    for (const t of tracked) {
-      byName[t.name] = { name: t.name, assignedTeam: t.assignedTeam ?? null, location: t.location ?? null };
-    }
-
-    const rows = Object.values(byName).map(r => {
-      const inUse = !!(r.assignedTeam && r.assignedTeam.trim());
-      const location = r.location ?? ''; // raw value for editing (may be empty)
-      let rightText: string;
-
-      if (inUse) {
-        // compute "CallNum - Team(s)" (leave as you already had)
-        const call = (event?.calls ?? []).find(c =>
-          c.assignedTeam?.includes(r.assignedTeam!) && ACTIVE_CALL_SET.has(c.status)
-        );
-        if (call) {
-          const callNo = callDisplayNumberMap.get(call.id);
-          const teams = (call.assignedTeam ?? []).join(', ');
-          rightText = `${callNo} - ${teams}`;
-        } else {
-          rightText = `— - ${r.assignedTeam ?? ''}`;
-        }
-      } else {
-        rightText = location || 'Clinic';
-      }
-
-      return { name: r.name, inUse, location, rightText };
-    });
-
-    rows.sort((a, b) => {
-      if (a.inUse !== b.inUse) return a.inUse ? 1 : -1;
-      return a.name.localeCompare(b.name, undefined, { numeric: true });
-    });
-
-    return rows;
-  }
 
 
   async function handleAgeSexBlur(callId: string) {
@@ -939,13 +804,11 @@ export default function DispatchPage({ params }: DispatchPageProps) {
 
     const hasChange = (call.age || '') !== newAge || (call.gender || '') !== newGender;
     if (hasChange) {
-      const now = new Date();
-      const hhmm = now.getHours().toString().padStart(2, '0') + now.getMinutes().toString().padStart(2, '0');
       const updatedCall = {
         ...call,
         age: newAge,
         gender: newGender,
-        log: [...(call.log || []), { timestamp: now.getTime(), message: `${hhmm} - Age/Sex set to ${formatAgeSex(newAge, newGender) || 'N/A'}.` }]
+        log: [...(call.log || []), new LogEntry(`Age/Sex set to ${formatAgeSex(newAge, newGender) || 'N/A'}.`)]
       };
       const updated = event!.calls.map(c => c.id === callId ? updatedCall : c);
       await updateEvent({ calls: updated });
@@ -1003,15 +866,11 @@ export default function DispatchPage({ params }: DispatchPageProps) {
           status: newStatus,
           log: [
             ...(s.log || []),
-            {
-              timestamp: Date.now(),
-              message: `${new Date().getHours().toString().padStart(2, '0')}${new Date().getMinutes().toString().padStart(2, '0')} - status changed to ${newStatus}`
-            }
+            new LogEntry(`status changed to ${newStatus}`)
           ]
         }
         : s
     );
-    // updateEvent({ supervisor: updatedSupervisors });
     updateEvent({
       supervisor: updatedSupervisors,
       postAssignments
@@ -1027,10 +886,7 @@ export default function DispatchPage({ params }: DispatchPageProps) {
           status: newLocation === 'Clinic' && s.status === 'Available' ? 'In Clinic' : s.status, // Changed from 'Available'
           log: [
             ...(s.log || []),
-            {
-              timestamp: Date.now(),
-              message: `${new Date().getHours().toString().padStart(2, '0')}${new Date().getMinutes().toString().padStart(2, '0')} - Post changed to ${newLocation}`
-            }
+            new LogEntry(`Post changed to ${newLocation}`)
           ]
         }
         : s
@@ -1076,7 +932,7 @@ export default function DispatchPage({ params }: DispatchPageProps) {
 
       // If on call and delivered eq, location is the assigned team
       if (activeCall && activeCall.status === 'Delivered Eq') {
-        currentLocation = activeCall.assignedTeam[0];
+        currentLocation = activeCall.assignedTeams[0];
       }
 
       // Check if equipment is in clinic
@@ -1137,9 +993,16 @@ export default function DispatchPage({ params }: DispatchPageProps) {
       }
 
       // Optimistically update local state so the UI reflects the change immediately
-      setEvent(prev => prev ? { ...prev, eventEquipment: updatedEventEquipment } : prev);
+      setEvent(prev => prev ? { ...prev, eventEquipment: updatedEventEquipment } as Event : prev);
 
       await updateEvent({ eventEquipment: updatedEventEquipment });
+
+      // event.addEventEquipment(new EventEquipment(equipmentName, newStatus))
+
+      // // Optimistically update local state so the UI reflects the change immediately
+      // setEvent(prev => prev ? event : prev);
+
+      // await updateEvent({ eventEquipment: event.eventEquipment });
     } catch (error) {
       console.error('Error updating equipment status:', error);
       toast.error('Failed to update equipment status');
@@ -1281,10 +1144,6 @@ export default function DispatchPage({ params }: DispatchPageProps) {
     const latestCall = event?.calls.find(c => c.id === callId);
     if (!latestCall) return;
 
-    const now = new Date();
-    const hhmm = now.getHours().toString().padStart(2, '0') + now.getMinutes().toString().padStart(2, '0');
-    const logMessage = `${hhmm} - ${team} set to ${newStatus}`;
-
     // DECLARE newCallStatus here with proper initialization
     let newCallStatus = latestCall.status; // Initialize with current status
 
@@ -1296,9 +1155,9 @@ export default function DispatchPage({ params }: DispatchPageProps) {
 
       const isDetaching = ['Delivered', 'Refusal', 'Unable to Locate', 'NMM', 'Detached', 'Delivering', 'Rolled from Scene'].includes(newStatus);
 
-      const updatedLog = [...(c.log || []), { timestamp: Date.now(), message: logMessage }];
+      const updatedLog = [...(c.log || []), new LogEntry(`${team} set to ${newStatus}`)];
 
-      let updatedAssignedTeam = c.assignedTeam || [];
+      let updatedAssignedTeam = c.assignedTeams || [];
       let updatedEquipmentTeams = c.equipmentTeams || [];
       const updatedDetachedTeams = [...(c.detachedTeams || [])];
 
@@ -1329,7 +1188,7 @@ export default function DispatchPage({ params }: DispatchPageProps) {
         // Auto-detach supervisors when any team is detached with resolving status
         if (['Delivered', 'Refusal', 'NMM'].includes(newStatus)) {
           const supervisorsOnCall = event?.supervisor?.filter(s =>
-            c.assignedTeam?.includes(s.team)
+            c.assignedTeams?.includes(s.team)
           ) || [];
 
           supervisorsOnCall.forEach(supervisor => {
@@ -1438,16 +1297,13 @@ export default function DispatchPage({ params }: DispatchPageProps) {
     let updatedSupervisor = event?.supervisor;
     if (['Delivered', 'Refusal', 'NMM', 'Rolled'].includes(newCallStatus)) {
       const supervisorsOnCall = event?.supervisor?.filter(s =>
-        latestCall.assignedTeam?.includes(s.team)
+        latestCall.assignedTeams?.includes(s.team)
       ) || [];
 
       if (supervisorsOnCall.length > 0) {
         updatedSupervisor = event?.supervisor?.map(s => {
           if (supervisorsOnCall.some(supervisor => supervisor.team === s.team)) {
-            const teamLogEntry: TeamLogEntry = {
-              timestamp: now.getTime(),
-              message: `${hhmm} - auto-detached from completed call, status set to Available at Roaming`
-            };
+            const teamLogEntry = new LogEntry(`auto-detached from completed call, status set to Available at Roaming`)
 
             return {
               ...s,
@@ -1484,7 +1340,7 @@ export default function DispatchPage({ params }: DispatchPageProps) {
               ...eq,
               assignedTeam: null,
               status: 'Available',
-              location: callAfterUpdate?.assignedTeam?.[0] || 'Clinic'
+              location: callAfterUpdate?.assignedTeams?.[0] || 'Clinic'
             }
             : eq
         );
@@ -1500,7 +1356,7 @@ export default function DispatchPage({ params }: DispatchPageProps) {
         );
       } else {
         // Case A: Call has no remaining assigned teams → resolve equipment to Clinic
-        const noTeamsRemain = !callAfterUpdate?.assignedTeam || callAfterUpdate.assignedTeam.length === 0;
+        const noTeamsRemain = !callAfterUpdate?.assignedTeams || callAfterUpdate.assignedTeams.length === 0;
         const callResolvedLike = ['Resolved', 'Delivered', 'Refusal', 'NMM', 'Unable to Locate', 'Rolled'].includes(
           callAfterUpdate?.status || newCallStatus
         );
@@ -1536,8 +1392,8 @@ export default function DispatchPage({ params }: DispatchPageProps) {
         } else {
           // Other teams remain on the call or the call is still active.
           // Keep equipment marked as In Use and preserve/transfer assignment appropriately.
-          const newAssigned = (callAfterUpdate?.assignedTeam && callAfterUpdate.assignedTeam.length > 0)
-            ? (callAfterUpdate.assignedTeam.includes(team) ? team : callAfterUpdate.assignedTeam[0])
+          const newAssigned = (callAfterUpdate?.assignedTeams && callAfterUpdate.assignedTeams.length > 0)
+            ? (callAfterUpdate.assignedTeams.includes(team) ? team : callAfterUpdate.assignedTeams[0])
             : team;
 
           updatedEquipment = event?.eventEquipment?.map(eq =>
@@ -1571,7 +1427,7 @@ export default function DispatchPage({ params }: DispatchPageProps) {
 
   const [selectedLeftTab, setSelectedLeftTab] = useState<string>('teams');
 
-  const { data: roles }: { data: Role[] } = useListCollection<Role>('roles');
+  const { data: roles }: { data: Role[] | null } = useGetCultureDoc<Role[]>('roles', roleMapper);
 
   useEffect(() => {
     const handleHotkey = (e: KeyboardEvent) => {
@@ -1602,9 +1458,9 @@ export default function DispatchPage({ params }: DispatchPageProps) {
 
     const unsubscribe = onSnapshot(doc(db, 'events', eventId), (doc) => {
       if (doc.exists()) {
-        const eventData = doc.data() as Event;
+        const eventData = new Event(doc.data());
         // Debug: log event document contents to diagnose missing postingTimes
-        // eslint-disable-next-line no-console
+
         console.log('Firestore snapshot - eventData:', {
           id: doc.id,
           postingTimes: eventData.postingTimes,
@@ -1630,6 +1486,11 @@ export default function DispatchPage({ params }: DispatchPageProps) {
         setEvent(prev => {
           if (!isEqual(prev, eventData)) {
             setPostAssignments(eventData.postAssignments || {});
+
+            eventData.calls.forEach((call: Call) => {
+              call.priority = Priority.create(call.priority);
+              return call
+            })
             return eventData;
           }
           return prev;
@@ -1659,27 +1520,17 @@ export default function DispatchPage({ params }: DispatchPageProps) {
 
     if (!call || !team) return;
 
-    const now = new Date();
-    const hhmm = now.getHours().toString().padStart(2, '0') +
-      now.getMinutes().toString().padStart(2, '0');
-
     // Update call log
-    const callLogEntry: CallLogEntry = {
-      timestamp: now.getTime(),
-      message: `${hhmm} - ${teamToRemove} detached from call.`
-    };
+    const callLogEntry = new LogEntry(`${teamToRemove} detached from call.`)
 
     // Update team log
-    const teamLogEntry: TeamLogEntry = {
-      timestamp: now.getTime(),
-      message: `${hhmm} - detached from call #${callDisplayNumberMap.get(callId)} (${callId}); back to post at ${team.location}`
-    };
+    const teamLogEntry = new LogEntry(`detached from call #${callDisplayNumberMap.get(callId)} (${callId}); back to post at ${team.location}`)
 
     // Update call: remove team and add log
     const updatedCall: Call = {
       ...call,
-      assignedTeam: (call.assignedTeam || []).filter(t => t !== teamToRemove),
-      status: (call.assignedTeam || []).length <= 1 ? 'Pending' : call.status,
+      assignedTeams: (call.assignedTeams || []).filter(t => t !== teamToRemove),
+      status: (call.assignedTeams || []).length <= 1 ? 'Pending' : call.status,
       log: [...(call.log || []), callLogEntry]
     };
 
@@ -1707,66 +1558,6 @@ export default function DispatchPage({ params }: DispatchPageProps) {
     });
   };
 
-  // const handlePostAssignment = async (time: string, postKey: string, team: string) => {
-  //   const updatedAssignments = {
-  //     ...postAssignments,
-  //     [time]: {
-  //       ...(postAssignments[time] || {}),
-  //       [postKey]: team,
-  //     },
-  //   };
-  //   setPostAssignments(updatedAssignments);
-  //   await updateEvent({ postAssignments: updatedAssignments });
-  // };
-
-  // const handleClearAllPostAssignments = async () => {
-  //   if (!event) return;
-
-  //   const clearedAssignments: { [time: string]: { [post: string]: string } } = {};
-  //   for (const time of event.postingTimes || []) {
-  //     clearedAssignments[time] = {};
-  //     for (const post of event.eventPosts || []) {
-  //       const postKey = getPostKey(post);
-  //       clearedAssignments[time][postKey] = '';
-  //     }
-  //   }
-
-  //   setPostAssignments(clearedAssignments);
-  //   await updateEvent({ postAssignments: clearedAssignments });
-  // };
-
-  // const handleUpdatePostingTime = async (originalTime: string, newTime: string) => {
-  //   if (!event) return;
-
-  //   const newPostingTimes = event.postingTimes?.map(time => 
-  //     time === originalTime ? newTime : time
-  //   ) || [];
-
-  //   // Update post assignments
-  //   const newPostAssignments = { ...postAssignments };
-  //   if (newPostAssignments[originalTime]) {
-  //     newPostAssignments[newTime] = newPostAssignments[originalTime];
-  //     delete newPostAssignments[originalTime];
-  //   }
-
-  //   // Update Firestore
-  //   await updateEvent({
-  //     postingTimes: newPostingTimes,
-  //     postAssignments: newPostAssignments
-  //   });
-  // };
-
-  // Right-click menu opener
-  // const handleRightClick = (e: React.MouseEvent, callId: string) => {
-  //   e.preventDefault();
-  //   e.stopPropagation();
-  //   setContextMenu({
-  //     x: e.clientX,
-  //     y: e.clientY,
-  //     callId,
-  //   });
-  // };
-
   // Mark a call as duplicate
   const handleMarkDuplicate = async (callId: string) => {
     setSelectedDuplicateCallId(callId);
@@ -1778,16 +1569,10 @@ export default function DispatchPage({ params }: DispatchPageProps) {
     const duplicateCall = event?.calls.find(c => c.id === duplicateCallId);
     if (!duplicateCall) return;
 
-    const now = new Date();
-    const hhmm = now.getHours().toString().padStart(2, '0') + now.getMinutes().toString().padStart(2, '0');
-
     const originalCallNumber = callDisplayNumberMap.get(originalCallId);
 
     // Update call log with duplicate resolution
-    const newLogEntry: CallLogEntry = {
-      timestamp: now.getTime(),
-      message: `${hhmm} - Resolved, duplicate to call #${originalCallNumber}`
-    };
+    const newLogEntry = new LogEntry(`Resolved, duplicate to call #${originalCallNumber}`)
 
     // Update call: set duplicate & status
     const updatedCall: Call = {
@@ -1796,19 +1581,16 @@ export default function DispatchPage({ params }: DispatchPageProps) {
       duplicateOf: originalCallId,
       status: 'Resolved',
       // Clear assigned teams when marking as duplicate
-      assignedTeam: [],
+      assignedTeams: [],
       log: [...(duplicateCall.log || []), newLogEntry]
     };
 
     // If there were teams assigned to this duplicate call, we should free them up
-    if (duplicateCall.assignedTeam && duplicateCall.assignedTeam.length > 0) {
+    if (duplicateCall.assignedTeams && duplicateCall.assignedTeams.length > 0) {
       const updatedStaff = event?.staff.map(staff => {
-        if (duplicateCall.assignedTeam?.includes(staff.team)) {
+        if (duplicateCall.assignedTeams?.includes(staff.team)) {
           // Free up the team - set them back to Available status at their original location
-          const teamLogEntry: TeamLogEntry = {
-            timestamp: now.getTime(),
-            message: `${hhmm} - freed from duplicate call #${callDisplayNumberMap.get(duplicateCallId)}, back to post`
-          };
+          const teamLogEntry = new LogEntry(`freed from duplicate call #${callDisplayNumberMap.get(duplicateCallId)}, back to post`)
 
           return {
             ...staff,
@@ -1838,44 +1620,6 @@ export default function DispatchPage({ params }: DispatchPageProps) {
     setSelectedDuplicateCallId(null);
   };
 
-  const handleTogglePriority = async (callId: string, priority: boolean) => {
-    const call = event?.calls.find(c => c.id === callId);
-    if (!call) return;
-
-    // Get the current time in HHMM format
-    const now = new Date();
-    const hhmm =
-      now.getHours().toString().padStart(2, '0') +
-      now.getMinutes().toString().padStart(2, '0');
-
-    // Build log message based on checked status
-    const logMessage = `${hhmm} - ${priority ? 'marked as Priority' : 'unmarked as Priority'
-      }`;
-
-    // Add the new log entry
-    const updatedCall = {
-      ...call,
-      priority,
-      log: [...(call.log || []), { timestamp: now.getTime(), message: logMessage }]
-    };
-
-    // Update the calls array
-    const updatedCalls = event?.calls.map(c =>
-      c.id === callId ? updatedCall : c
-    );
-
-    await updateEvent({ calls: updatedCalls });
-  };
-
-  // Toggle Priority (as before)
-  const handleTogglePriorityFromMenu = async (callId: string) => {
-    const call = event?.calls.find(c => c.id === callId);
-    if (!call) return;
-
-    await handleTogglePriority(callId, !call.priority);
-    setContextMenu(null);
-  };
-
   // Close menu when clicking elsewhere
   useEffect(() => {
     const handleClickOutside = () => setContextMenu(null);
@@ -1892,14 +1636,9 @@ export default function DispatchPage({ params }: DispatchPageProps) {
   }, [contextMenu]);
 
   const addTeamLog = useCallback((staff: Staff, message: string): Staff => {
-    const now = new Date();
-    const hhmm =
-      now.getHours().toString().padStart(2, '0') +
-      now.getMinutes().toString().padStart(2, '0');
-    const newEntry = { timestamp: now.getTime(), message: `${hhmm} - ${message}` };
     return {
       ...staff,
-      log: [...(staff.log || []), newEntry],
+      log: [...(staff.log || []), new LogEntry(message)],
     };
   }, []);
 
@@ -1911,24 +1650,20 @@ export default function DispatchPage({ params }: DispatchPageProps) {
     await updateEvent((currentEvent) => {
 
       const callId = currentEvent.calls.find(c =>
-        c.assignedTeam?.includes(team) &&
+        c.assignedTeams?.includes(team) &&
         !['Resolved', 'Available'].includes(c.status)
       )?.id;
 
-      const now = new Date();
-      const hhmm = now.getHours().toString().padStart(2, '0') + now.getMinutes().toString().padStart(2, '0');
-      const logMessage = `${hhmm} - ${team} set to ${newStatus}`;
+      const logMessage = new LogEntry(`${team} set to ${newStatus}`);
 
       const updatedStaff = (currentEvent.staff || []).map(s => {
         if (s.team !== team) return s;
-
-        const teamLogEntry: TeamLogEntry = { timestamp: now.getTime(), message: logMessage };
 
         return {
           ...s,
           status: newStatus,
           location: newStatus === 'Available' ? (s.originalPost || 'Roaming') : s.location,
-          log: [...(s.log || []), teamLogEntry]
+          log: [...(s.log || []), logMessage]
         };
       });
 
@@ -1938,7 +1673,7 @@ export default function DispatchPage({ params }: DispatchPageProps) {
         updatedCalls = updatedCalls.map(c => {
           if (c.id !== callId) return c;
 
-          const assignedTeams = c.assignedTeam || [];
+          const assignedTeams = c.assignedTeams || [];
           const teamStatuses = assignedTeams.map(t => {
             if (t === team) return newStatus; // The new status for current team
             const s = updatedStaff.find(st => st.team === t);
@@ -1954,7 +1689,7 @@ export default function DispatchPage({ params }: DispatchPageProps) {
           return {
             ...c,
             status: newCallStatus,
-            log: [...(c.log || []), { timestamp: now.getTime(), message: logMessage }]
+            log: [...(c.log || []), logMessage]
           };
         });
       }
@@ -1990,25 +1725,15 @@ export default function DispatchPage({ params }: DispatchPageProps) {
     const call = event.calls.find(c => c.id === callId);
     if (!call) return;
 
-    const now = new Date();
-    const hhmm = now.getHours().toString().padStart(2, '0') +
-      now.getMinutes().toString().padStart(2, '0');
-
     // Update call log
-    const callLogEntry: CallLogEntry = {
-      timestamp: now.getTime(),
-      message: `${hhmm} - ${team} assigned and en route.`
-    };
+    const callLogEntry = new LogEntry(`${team} assigned and en route.`)
 
     // Update team log
-    const teamLogEntry: TeamLogEntry = {
-      timestamp: now.getTime(),
-      message: `${hhmm} - responding to call #${callDisplayNumberMap.get(callId)} (${callId})`
-    };
+    const teamLogEntry = new LogEntry(`responding to call #${callDisplayNumberMap.get(callId)} (${callId})`)
 
     const updatedCall: Call = {
       ...call,
-      assignedTeam: [...(call.assignedTeam || []), team],
+      assignedTeams: [...(call.assignedTeams || []), team],
       status: 'Assigned',
       log: [...(call.log || []), callLogEntry]
     };
@@ -2447,13 +2172,8 @@ export default function DispatchPage({ params }: DispatchPageProps) {
       const nextTime = computeNextPostingTime(hhmm, event.postingTimes);
       setNextPostingTime(nextTime);
 
-      console.log(`Current time: ${hhmm}`);
-      console.log(`All posting times:`, event.postingTimes);
-      console.log(`Next posting time computed: ${nextTime}`);
-
       // Also compute and log the current active time
       const activeTime = getCurrentActiveTime();
-      console.log(`Current active time for highlighting: ${activeTime}`);
     }
   }, [event?.postingTimes, getCurrentActiveTime, computeNextPostingTime]);
 
@@ -2475,8 +2195,6 @@ export default function DispatchPage({ params }: DispatchPageProps) {
     }
 
     const busy = new Set(['En Route', 'On Scene', 'Transporting']);
-    const now = new Date();
-    const hhmm = now.getHours().toString().padStart(2, '0') + now.getMinutes().toString().padStart(2, '0');
 
     let changed = 0;
     const updatedStaff = (event.staff || []).map(t => {
@@ -2497,7 +2215,7 @@ export default function DispatchPage({ params }: DispatchPageProps) {
         location: postForTeam,
         log: [
           ...(t.log || []),
-          { timestamp: now.getTime(), message: `${hhmm} - Post changed to ${postForTeam} (manual refresh)` }
+          new LogEntry(`Post changed to ${postForTeam} (manual refresh)`)
         ],
       };
     });
@@ -2541,9 +2259,6 @@ export default function DispatchPage({ params }: DispatchPageProps) {
       return;
     }
 
-    const now = new Date();
-    const hhmm = now.getHours().toString().padStart(2, '0') + now.getMinutes().toString().padStart(2, '0');
-
     const updatedStaff = (event.staff || []).map(s =>
       s.team === teamName
         ? {
@@ -2551,7 +2266,7 @@ export default function DispatchPage({ params }: DispatchPageProps) {
           location: postForTeam,
           log: [
             ...(s.log || []),
-            { timestamp: now.getTime(), message: `${hhmm} - Post changed to ${postForTeam} (manual refresh)` }
+            new LogEntry(`Post changed to ${postForTeam} (manual refresh)`)
           ],
         }
         : s
@@ -2572,19 +2287,10 @@ export default function DispatchPage({ params }: DispatchPageProps) {
     return map;
   }, [sortedAllCalls]);
 
-  // const activeCalls = useMemo(() => 
-  //   sortedAllCalls.filter(call => call.status !== 'Resolved'), 
-  //   [sortedAllCalls]
-  // );
-
   function handleCellClick<K extends keyof Call>(callId: string, field: K, value?: Call[K]) {
     setEditingCell({ callId, field });
     setEditValue(typeof value === "string" ? value : value !== undefined && value !== null ? String(value) : "");
   }
-
-  // function capitalize(str) {
-  //   return str.charAt(0).toUpperCase() + str.slice(1);
-  // }
 
   function camelCaseToTitle(str: string) {
     // Insert a space before all caps and capitalize the first letter
@@ -2601,12 +2307,9 @@ export default function DispatchPage({ params }: DispatchPageProps) {
     const newValue = editValue;
 
     if (prevValue !== newValue) {
-      const now = new Date();
-      const hhmm = now.getHours().toString().padStart(2, '0') + now.getMinutes().toString().padStart(2, '0');
       const action = (prevValue === undefined || prevValue === "" || prevValue === null)
         ? "set"
         : "changed";
-      const logMessage = `${hhmm} - ${camelCaseToTitle(field)} ${action} to ${newValue}.`;
 
       // Add log entry to the call's log
       const updatedCall = {
@@ -2614,7 +2317,7 @@ export default function DispatchPage({ params }: DispatchPageProps) {
         [field]: newValue,
         log: [
           ...(call.log || []),
-          { timestamp: now.getTime(), message: logMessage }
+          new LogEntry(`${camelCaseToTitle(field)} ${action} to ${newValue}.`)
         ]
       };
 
@@ -2631,15 +2334,15 @@ export default function DispatchPage({ params }: DispatchPageProps) {
   }
 
   const computeCallStatus = (call: Call): string => {
-    if (!Array.isArray(call.assignedTeam)) return call.status || 'Pending';
+    if (!Array.isArray(call.assignedTeams)) return call.status || 'Pending';
 
     if (!event) return call.status || 'Pending';
 
-    if (!call.assignedTeam || call.assignedTeam.length === 0) {
+    if (!call.assignedTeams || call.assignedTeams.length === 0) {
       return call.status || 'Pending';
     }
 
-    const teamStatuses = call.assignedTeam
+    const teamStatuses = call.assignedTeams
       .map(teamName => event.staff.find(t => t.team === teamName)?.status)
       .filter(Boolean) as string[];
 
@@ -2735,93 +2438,31 @@ export default function DispatchPage({ params }: DispatchPageProps) {
     setOpenCallId(openCallId === id ? null : id);
   };
 
-  // function getPostKey(post: Post): string {
-  //   return typeof post === 'string' ? post : post.name;
-  // }
-
-  // Handler reserved for interactive map marker moves; keep defined for future use
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const handleTeamMarkerMove = async (teamName: string, newX: number, newY: number) => {
-    if (!event) return;
-    // Find the team's current post object
-    const team = event.staff.find(t => t.team === teamName);
-    if (!team) return;
-    // Find the post object for the team's location
-    const postIdx = event.eventPosts.findIndex(p => (typeof p === 'string' ? p : p.name) === team.location);
-    if (postIdx === -1) return;
-
-    // Update the post's coordinates
-    const posts = [...event.eventPosts];
-    if (typeof posts[postIdx] === 'object') {
-      posts[postIdx] = { ...posts[postIdx], x: newX, y: newY };
-    }
-
-    await updateEvent({
-      venue: {
-        ...event.venue,
-        posts,
-      }
-    });
-  };
-
-  // Handler reserved for interactive equipment marker moves; keep defined for future use
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  const handleEquipmentMarkerMove = async (equipmentId: string, newX: number, newY: number) => {
-    if (!event) return;
-
-    // Find the equipment in eventEquipment array
-    const equipment = event.eventEquipment?.find(eq => eq.id === equipmentId);
-    if (!equipment) return;
-
-    // Find the post object for equipment's current location
-    const postIndex = event.eventPosts?.findIndex(p =>
-      (typeof p === 'string' ? p : p.name) === equipment.location
-    );
-
-    if (postIndex === -1 || !event.eventPosts) {
-      // No matching post found, equipment might not have a valid location
-      console.warn(`No post found for equipment ${equipment.name} at location ${equipment.location}`);
-      return;
-    }
-
-    // Update the post's coordinates
-    const updatedPosts = [...event.eventPosts];
-    if (typeof updatedPosts[postIndex] === 'object') {
-      updatedPosts[postIndex] = {
-        ...updatedPosts[postIndex],
-        x: newX,
-        y: newY
-      };
-    }
-
-    // Save updated posts to the event
-    await updateEvent({
-      eventPosts: updatedPosts
-    });
-  };
 
   if (!event) return <LoadingScreen label="Loading event…" />;
 
-  const COLW = {
-    CALLNO: '5rem',   // Call #
-    CC: '10rem',  // Chief Complaint
-    AS: '4rem',   // A/S
-    STATUS: '9rem',   // Status
-    LOC: '10rem',  // Location
-  };
+  // const COLW = {
+  //   CALLNO: '5rem',   // Call #
+  //   PRIORITY: '6rem', // Priority
+  //   CC: '10rem',  // Chief Complaint
+  //   AS: '4rem',   // A/S
+  //   STATUS: '9rem',   // Status
+  //   LOC: '10rem',  // Location
+  // };
 
-  function TableColGroup() {
-    return (
-      <colgroup>
-        <col style={{ width: COLW.CALLNO }} />
-        <col style={{ width: COLW.CC }} />
-        <col style={{ width: COLW.AS }} />
-        <col style={{ width: COLW.STATUS }} />
-        <col style={{ width: COLW.LOC }} />
-        <col />
-      </colgroup>
-    );
-  }
+  // function TableColGroup() {
+  //   return (
+  //     <colgroup>
+  //       <col style={{ width: COLW.CALLNO }} />
+  //       <col style={{ width: COLW.PRIORITY }} />
+  //       <col style={{ width: COLW.CC }} />
+  //       <col style={{ width: COLW.AS }} />
+  //       <col style={{ width: COLW.STATUS }} />
+  //       <col style={{ width: COLW.LOC }} />
+  //       <col />
+  //     </colgroup>
+  //   );
+  // }
 
   const handleDeleteCall = async (callId: string) => {
     if (!event) return;
@@ -2832,6 +2473,8 @@ export default function DispatchPage({ params }: DispatchPageProps) {
     await updateEvent({ calls: updatedCalls });
     setContextMenu(null);
   };
+
+
 
   return (
     <>
@@ -2845,6 +2488,7 @@ export default function DispatchPage({ params }: DispatchPageProps) {
         setQuickCall={setQuickCall}
         formatAgeSex={formatAgeSex}
         parseAgeSex={parseAgeSex}
+        priorities={priorities}
         quickCallRef={quickCallRef}
       />
       <ClinicWalkupModal
@@ -2856,6 +2500,7 @@ export default function DispatchPage({ params }: DispatchPageProps) {
         setClinicCall={setClinicCall}
         formatAgeSex={formatAgeSex}
         parseAgeSex={parseAgeSex}
+        priorities={priorities}
       />
       <AddTeamModal
         isOpen={showAddTeamModal}
@@ -3285,7 +2930,6 @@ export default function DispatchPage({ params }: DispatchPageProps) {
                         handleAgeSexBlur={handleAgeSexBlur}
                         handleRowClick={handleRowClick}
                         handleMarkDuplicate={handleMarkDuplicate}
-                        handleTogglePriorityFromMenu={handleTogglePriorityFromMenu}
                         handleDeleteCall={handleDeleteCall}
                         handleTeamStatusChange={handleTeamStatusChange}
                         handleRemoveTeamFromCall={handleRemoveTeamFromCall}
@@ -3293,8 +2937,9 @@ export default function DispatchPage({ params }: DispatchPageProps) {
                         getCallRowClass={getCallRowClass}
                         computeCallStatus={computeCallStatus}
                         formatAgeSex={formatAgeSex}
-                        TableColGroup={TableColGroup}
+                        // TableColGroup={TableColGroup}
                         PortalDropdown={PortalDropdown as unknown as React.ComponentType<unknown>}
+                        priorities={priorities ?? []}
                       />
                     </div>
 
@@ -3318,6 +2963,7 @@ export default function DispatchPage({ params }: DispatchPageProps) {
                         handleAgeSexBlur={handleAgeSexBlur}
                         getCallRowClass={getCallRowClass}
                         formatAgeSex={formatAgeSex}
+                        priorities={priorities ?? []}
                       />
                     </div>
                   </div>
@@ -3682,12 +3328,12 @@ export default function DispatchPage({ params }: DispatchPageProps) {
                         // Active calls first
                         ...event.calls
                           .filter((call: Call) => !['Delivered', 'Refusal', 'NMM', 'Rolled', 'Resolved', 'Unable to Locate'].includes(call.status))
-                          .sort((a: Call, b: Call) => parseInt(a.id) - parseInt(b.id)),
+                          .sort((a: Call, b: Call) => a.priority.id - b.priority.id),
                         // Show resolved calls when showResolvedCalls is true
                         ...(showResolvedCalls
                           ? event.calls
                             .filter((c: Call) => ['Delivered', 'Refusal', 'NMM', 'Rolled', 'Resolved', 'Unable to Locate'].includes(c.status))
-                            .sort((a: Call, b: Call) => parseInt(a.id) - parseInt(b.id))
+                            .sort((a: Call, b: Call) => a.priority.id - b.priority.id)
                           : [])
                       ].map((call: Call) => (
                         <CallTrackingCard
@@ -3699,12 +3345,10 @@ export default function DispatchPage({ params }: DispatchPageProps) {
                             const callToUpdate = event.calls.find(c => c.id === callId);
                             if (!callToUpdate) return;
 
-                            const now = new Date();
-                            const hhmm = now.getHours().toString().padStart(2, '0') + now.getMinutes().toString().padStart(2, '0');
                             const updatedCall = {
                               ...callToUpdate,
                               location: newLocation,
-                              log: [...(callToUpdate.log || []), { timestamp: now.getTime(), message: `${hhmm} - Location changed to ${newLocation}.` }]
+                              log: [...(callToUpdate.log || []), new LogEntry(`Location changed to ${newLocation}.`)]
                             };
                             const updatedCalls = event.calls.map(c => c.id === callId ? updatedCall : c);
                             await updateEvent({ calls: updatedCalls });
@@ -3717,13 +3361,11 @@ export default function DispatchPage({ params }: DispatchPageProps) {
                             const newAge = age || '';
                             const newGender = gender || '';
 
-                            const now = new Date();
-                            const hhmm = now.getHours().toString().padStart(2, '0') + now.getMinutes().toString().padStart(2, '0');
                             const updatedCall = {
                               ...callToUpdate,
                               age: newAge,
                               gender: newGender,
-                              log: [...(callToUpdate.log || []), { timestamp: now.getTime(), message: `${hhmm} - Age/Sex set to ${formatAgeSex(newAge, newGender) || 'N/A'}.` }]
+                              log: [...(callToUpdate.log || []), new LogEntry(`Age/Sex set to ${formatAgeSex(newAge, newGender) || 'N/A'}.`)]
                             };
                             const updatedCalls = event.calls.map(c => c.id === callId ? updatedCall : c);
                             await updateEvent({ calls: updatedCalls });
@@ -3732,12 +3374,10 @@ export default function DispatchPage({ params }: DispatchPageProps) {
                             const callToUpdate = event.calls.find(c => c.id === callId);
                             if (!callToUpdate) return;
 
-                            const now = new Date();
-                            const hhmm = now.getHours().toString().padStart(2, '0') + now.getMinutes().toString().padStart(2, '0');
                             const updatedCall = {
                               ...callToUpdate,
                               chiefComplaint: newChiefComplaint,
-                              log: [...(callToUpdate.log || []), { timestamp: now.getTime(), message: `${hhmm} - Chief Complaint changed to ${newChiefComplaint}.` }]
+                              log: [...(callToUpdate.log || []), new LogEntry(`Chief Complaint changed to ${newChiefComplaint}.`)]
                             };
                             const updatedCalls = event.calls.map(c => c.id === callId ? updatedCall : c);
                             await updateEvent({ calls: updatedCalls });
@@ -3746,7 +3386,6 @@ export default function DispatchPage({ params }: DispatchPageProps) {
                           onAddTeamToCall={handleAddTeamToCall}
                           handleTeamStatusChange={handleTeamStatusChange}
                           handleMarkDuplicate={handleMarkDuplicate}
-                          handleTogglePriority={handleTogglePriorityFromMenu}
                           handleDeleteCall={handleDeleteCall}
                           getCallRowClass={getCallRowClass}
                           formatAgeSex={formatAgeSex}
@@ -3817,12 +3456,10 @@ export default function DispatchPage({ params }: DispatchPageProps) {
                             const callToUpdate = event.calls.find(c => c.id === callId);
                             if (!callToUpdate) return;
 
-                            const now = new Date();
-                            const hhmm = now.getHours().toString().padStart(2, '0') + now.getMinutes().toString().padStart(2, '0');
                             const updatedCall = {
                               ...callToUpdate,
                               location: newLocation,
-                              log: [...(callToUpdate.log || []), { timestamp: now.getTime(), message: `${hhmm} - Location changed to ${newLocation}.` }]
+                              log: [...(callToUpdate.log || []), new LogEntry(`Location changed to ${newLocation}.`)]
                             };
                             const updatedCalls = event.calls.map(c => c.id === callId ? updatedCall : c);
                             await updateEvent({ calls: updatedCalls });
@@ -3835,13 +3472,11 @@ export default function DispatchPage({ params }: DispatchPageProps) {
                             const newAge = age || '';
                             const newGender = gender || '';
 
-                            const now = new Date();
-                            const hhmm = now.getHours().toString().padStart(2, '0') + now.getMinutes().toString().padStart(2, '0');
                             const updatedCall = {
                               ...callToUpdate,
                               age: newAge,
                               gender: newGender,
-                              log: [...(callToUpdate.log || []), { timestamp: now.getTime(), message: `${hhmm} - Age/Sex set to ${formatAgeSex(newAge, newGender) || 'N/A'}.` }]
+                              log: [...(callToUpdate.log || []), new LogEntry(`Age/Sex set to ${formatAgeSex(newAge, newGender) || 'N/A'}.`)]
                             };
                             const updatedCalls = event.calls.map(c => c.id === callId ? updatedCall : c);
                             await updateEvent({ calls: updatedCalls });
@@ -3850,12 +3485,10 @@ export default function DispatchPage({ params }: DispatchPageProps) {
                             const callToUpdate = event.calls.find(c => c.id === callId);
                             if (!callToUpdate) return;
 
-                            const now = new Date();
-                            const hhmm = now.getHours().toString().padStart(2, '0') + now.getMinutes().toString().padStart(2, '0');
                             const updatedCall = {
                               ...callToUpdate,
                               chiefComplaint: newChiefComplaint,
-                              log: [...(callToUpdate.log || []), { timestamp: now.getTime(), message: `${hhmm} - Chief Complaint changed to ${newChiefComplaint}.` }]
+                              log: [...(callToUpdate.log || []), new LogEntry(`Chief Complaint changed to ${newChiefComplaint}.`)]
                             };
                             const updatedCalls = event.calls.map(c => c.id === callId ? updatedCall : c);
                             await updateEvent({ calls: updatedCalls });
@@ -3864,18 +3497,15 @@ export default function DispatchPage({ params }: DispatchPageProps) {
                             const callToUpdate = event.calls.find(c => c.id === callId);
                             if (!callToUpdate) return;
 
-                            const now = new Date();
-                            const hhmm = now.getHours().toString().padStart(2, '0') + now.getMinutes().toString().padStart(2, '0');
                             const updatedCall = {
                               ...callToUpdate,
                               outcome: outcome === 'In Clinic' ? undefined : outcome as ClinicOutcome,
-                              log: [...(callToUpdate.log || []), { timestamp: now.getTime(), message: `${hhmm} - Clinic Status: ${outcome}` }]
+                              log: [...(callToUpdate.log || []), new LogEntry(`Clinic Status: ${outcome}`)]
                             };
                             const updatedCalls = event.calls.map(c => c.id === callId ? updatedCall : c);
                             await updateEvent({ calls: updatedCalls });
                           }}
                           handleDeleteCall={handleDeleteCall}
-                          getCallRowClass={getCallRowClass}
                           formatAgeSex={formatAgeSex}
                           updateEvent={updateEvent}
                         />
@@ -3965,6 +3595,7 @@ export default function DispatchPage({ params }: DispatchPageProps) {
                 <thead className="bg-surface-deep sticky top-0">
                   <tr>
                     <th className="px-3 py-2 text-left text-surface-light">Call #</th>
+                    <th className="px-3 py-2 text-left text-surface-light">Priority</th>
                     <th className="px-3 py-2 text-left text-surface-light">Chief Complaint</th>
                     <th className="px-3 py-2 text-left text-surface-light">Age</th>
                     <th className="px-3 py-2 text-left text-surface-light">Sex</th>
@@ -3979,6 +3610,7 @@ export default function DispatchPage({ params }: DispatchPageProps) {
                     .map(call => (
                       <tr key={call.id} className="border-b border-surface-liner hover:bg-surface-deep">
                         <td className="px-3 py-2">{callDisplayNumberMap.get(call.id)}</td>
+                        <td className="px-3 py-2">{'P' + call.priority.id || 'N/A'}</td>
                         <td className="px-3 py-2">{call.chiefComplaint || 'N/A'}</td>
                         <td className="px-3 py-2">{call.age || 'N/A'}</td>
                         <td className="px-3 py-2">{call.gender || 'N/A'}</td>

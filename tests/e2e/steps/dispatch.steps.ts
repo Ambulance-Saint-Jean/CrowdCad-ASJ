@@ -40,9 +40,16 @@ When('I open the quick call modal', async ({ page }) => {
   await expect(page.getByRole('dialog')).toBeVisible();
 });
 
-When('I log a call with location {string} and complaint {string}', async ({ page, scenarioState }, location: string, complaint: string) => {
+When('I log a call with location {string}, complaint {string} and priority {string}', async ({ page, scenarioState }, location: string, complaint: string, priority: string) => {
   scenarioState.loggedCallLocation = location;
   const dialog = page.getByRole('dialog');
+
+  // await dialog.getByRole('button', { name: 'Priority' }).click();
+  // await dialog.getByRole('menuitem', { name: new RegExp(priority.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), exact: false }).click();
+  // await dialog.getByText('P1 - High').click(); // , { exact: true }
+  await dialog.locator('[aria-label="Priority"]').click();
+  await page.locator('[role="listbox"]').getByText(priority, { exact: true }).click();
+
   await dialog.getByLabel('Location').fill(location);
   await dialog.getByLabel('Chief Complaint').fill(complaint);
   await dialog.getByRole('button', { name: 'Submit' }).click();

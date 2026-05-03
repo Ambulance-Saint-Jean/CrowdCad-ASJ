@@ -25,11 +25,11 @@ function getScheduleWindow(event: Event): { start: number; end: number } {
 
   // Adjust these keys if your event stores posting window differently
   const startFields = ['postingStart', 'scheduleStart', 'startTime', 'start'];
-  const endFields   = ['postingEnd',   'scheduleEnd',   'endTime',   'end'];
+  const endFields = ['postingEnd', 'scheduleEnd', 'endTime', 'end'];
 
   const starts = startFields
-  .map(k => getNum(event[k as keyof Event]))
-  .filter(Boolean) as number[];
+    .map(k => getNum(event[k as keyof Event]))
+    .filter(Boolean) as number[];
 
   const ends = endFields
     .map(k => getNum(event[k as keyof Event]))
@@ -50,7 +50,7 @@ function getScheduleWindow(event: Event): { start: number; end: number } {
   const derivedEnd = Number.isFinite(maxTs) ? maxTs : derivedStart + 4 * 60 * 60 * 1000;
 
   const start = (starts.length ? Math.min(...starts) : derivedStart) - TWO_HOURS;
-  const end   = (ends.length   ? Math.max(...ends)   : derivedEnd)   + TWO_HOURS;
+  const end = (ends.length ? Math.max(...ends) : derivedEnd) + TWO_HOURS;
   return { start, end };
 }
 
@@ -93,7 +93,7 @@ function teamPieData(event: Event) {
 function callsByTeam(event: Event) {
   const counts: Record<string, number> = {};
   for (const call of event.calls || []) {
-    const assigned = call.assignedTeam ?? [];
+    const assigned = call.assignedTeams ?? [];
     const detached = (call.detachedTeams ?? []).map(d => d.team);
     const involved = new Set([...assigned, ...detached].filter(Boolean));
 
@@ -224,8 +224,8 @@ export default function SummaryPage() {
   const { eventId } = params as { eventId?: string };
 
   const [openStaff, setOpenStaff] = useState(false);
-  const [openCalls,  setOpenCalls]  = useState(false);
-  const [event, setEvent]         = useState<Event | null>(null);
+  const [openCalls, setOpenCalls] = useState(false);
+  const [event, setEvent] = useState<Event | null>(null);
   const [openDataCollection, setOpenDataCollection] = useState(false);
 
 
@@ -292,8 +292,8 @@ export default function SummaryPage() {
   const formatTimestamp = (timestamp: number) => {
     // Check if this looks like elapsed seconds (< 86400 = 24 hours in seconds)
     // if (timestamp < 86400) {
-      // This is elapsed seconds with 2 decimal places for milliseconds
-      return timestamp.toFixed(2);
+    // This is elapsed seconds with 2 decimal places for milliseconds
+    return timestamp.toFixed(2);
     // } 
     // else {
     //   // This is a Unix timestamp in milliseconds, format as date/time
@@ -373,7 +373,7 @@ export default function SummaryPage() {
   if (event?.calls) {
     event.calls.forEach((call) => {
       // Combine assigned and detached teams
-      const assignedTeams = call.assignedTeam || [];
+      const assignedTeams = call.assignedTeams || [];
       const detachedTeams = call.detachedTeams?.map(dt => dt.team) || [];
       const involvedTeams = [...new Set([...assignedTeams, ...detachedTeams])];
 
@@ -467,32 +467,32 @@ export default function SummaryPage() {
     '#f23554',    // (242, 53, 84)
     '#f01c1c',    // End: red (240, 28, 28)
   ];
-  
-  
-  
+
+
+
   const generateDataCollectionCSV = () => {
     if (!event || !interactionSessions.length) return '';
 
     const csvRows: string[] = [];
-    
+
     // Find the earliest session start time to use as reference point
     const sessionStartTimestamp = Math.min(...interactionSessions.map(s => s.startTime));
-    
+
     // Convert timestamp to seconds after session start
     const convertTimestamp = (timestamp: number) => {
       const elapsedMs = timestamp - sessionStartTimestamp;
       return (elapsedMs / 1000).toFixed(2);
     };
-    
+
     // Headers for interaction data
     csvRows.push('Session ID,Event ID,Session Start,Session End,Duration (ms),Mouse Clicks,Key Strokes,Clicks Per Minute,Keys Per Minute');
-    
+
     interactionSessions.forEach(session => {
       const duration = (session.endTime || Date.now()) - session.startTime;
       const durationMinutes = duration / (1000 * 60);
       const clicksPerMinute = durationMinutes > 0 ? (session.mouseClicks.length / durationMinutes).toFixed(2) : '0';
       const keysPerMinute = durationMinutes > 0 ? (session.keyStrokes.length / durationMinutes).toFixed(2) : '0';
-      
+
       csvRows.push([
         session.sessionId,
         session.eventId,
@@ -510,7 +510,7 @@ export default function SummaryPage() {
     csvRows.push(''); // Empty line separator
     csvRows.push('Detailed Mouse Clicks:');
     csvRows.push('Session ID,Timestamp');
-    
+
     interactionSessions.forEach(session => {
       session.mouseClicks.forEach(click => {
         csvRows.push([
@@ -524,7 +524,7 @@ export default function SummaryPage() {
     csvRows.push(''); // Empty line separator
     csvRows.push('Detailed Key Strokes:');
     csvRows.push('Session ID,Timestamp');
-    
+
     interactionSessions.forEach(session => {
       session.keyStrokes.forEach(stroke => {
         csvRows.push([
@@ -542,7 +542,7 @@ export default function SummaryPage() {
 
   //   const eventCsv = generateCSVData(); // Your existing function
   //   const dataCollectionCsv = generateDataCollectionCSV();
-    
+
   //   return eventCsv + '\n\n--- DATA COLLECTION METRICS ---\n' + dataCollectionCsv;
   // };
 
@@ -563,11 +563,11 @@ export default function SummaryPage() {
   const totalSessions = interactionSessions.length;
   const totalMouseClicks = interactionSessions.reduce((sum, session) => sum + session.mouseClicks.length, 0);
   const totalKeyStrokes = interactionSessions.reduce((sum, session) => sum + session.keyStrokes.length, 0);
-  const avgSessionDuration = totalSessions > 0 
+  const avgSessionDuration = totalSessions > 0
     ? interactionSessions.reduce((sum, session) => {
-        const duration = (session.endTime || Date.now()) - session.startTime;
-        return sum + duration;
-      }, 0) / totalSessions / 1000 / 60 // Convert to minutes
+      const duration = (session.endTime || Date.now()) - session.startTime;
+      return sum + duration;
+    }, 0) / totalSessions / 1000 / 60 // Convert to minutes
     : 0;
 
   // Create chronological call numbers based on first log entry time
@@ -591,63 +591,63 @@ export default function SummaryPage() {
       <DiagonalStreaks />
       <div className="relative z-10 px-6 md:px-20 py-8">
         <div className="max-w-[1200px] mx-auto space-y-6">
-        {/* Header */}
-        <div className="flex flex-col gap-3">
-          <div className="flex items-end justify-between gap-3">
-            <h1 className="text-3xl md:text-4xl font-bold">
-              Event Summary: {event.name}{' '}
-              <span className="font-normal text-surface-light/70 text-xl md:text-2xl">
-                ({eventDate.toLocaleDateString()})
-              </span>
-            </h1>
-            <div className="flex gap-2 shrink-0">
-              <Button
-                onPress={handleCSVDownload}
-                variant="flat"
-                radius="lg"
-                className="px-4 py-2 bg-accent hover:bg-accent/90 text-white font-semibold"
-              >
-                Export Logs
-              </Button>
-              {totalSessions > 0 && (
+          {/* Header */}
+          <div className="flex flex-col gap-3">
+            <div className="flex items-end justify-between gap-3">
+              <h1 className="text-3xl md:text-4xl font-bold">
+                Event Summary: {event.name}{' '}
+                <span className="font-normal text-surface-light/70 text-xl md:text-2xl">
+                  ({eventDate.toLocaleDateString()})
+                </span>
+              </h1>
+              <div className="flex gap-2 shrink-0">
                 <Button
-                  onPress={handleDataCollectionCSVDownload}
+                  onPress={handleCSVDownload}
                   variant="flat"
                   radius="lg"
-                  className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold"
+                  className="px-4 py-2 bg-accent hover:bg-accent/90 text-white font-semibold"
                 >
-                  Export Testing Data
+                  Export Logs
                 </Button>
-              )}
+                {totalSessions > 0 && (
+                  <Button
+                    onPress={handleDataCollectionCSVDownload}
+                    variant="flat"
+                    radius="lg"
+                    className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-semibold"
+                  >
+                    Export Testing Data
+                  </Button>
+                )}
+              </div>
             </div>
           </div>
-        </div>
 
-        {/* BIG totals */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-          <Card isBlurred className="bg-surface-deep/60 border border-default-200">
-            <CardBody className="p-6">
-              <div className="text-sm opacity-70">Total Calls</div>
-              <div className="text-6xl md:text-7xl font-extrabold leading-none mt-1">{totalCalls}</div>
-            </CardBody>
-          </Card>
+          {/* BIG totals */}
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <Card isBlurred className="bg-surface-deep/60 border border-default-200">
+              <CardBody className="p-6">
+                <div className="text-sm opacity-70">Total Calls</div>
+                <div className="text-6xl md:text-7xl font-extrabold leading-none mt-1">{totalCalls}</div>
+              </CardBody>
+            </Card>
 
-          <Card isBlurred className="bg-surface-deep/60 border border-default-200">
-            <CardBody className="p-6">
-              <div className="text-sm opacity-70">Delivered to Clinic</div>
-              <div className="text-6xl md:text-7xl font-extrabold leading-none mt-1">{totalDeliveredToClinic}</div>
-            </CardBody>
-          </Card>
+            <Card isBlurred className="bg-surface-deep/60 border border-default-200">
+              <CardBody className="p-6">
+                <div className="text-sm opacity-70">Delivered to Clinic</div>
+                <div className="text-6xl md:text-7xl font-extrabold leading-none mt-1">{totalDeliveredToClinic}</div>
+              </CardBody>
+            </Card>
 
-          <Card isBlurred className="bg-surface-deep/60 border border-default-200">
-            <CardBody className="p-6">
-              <div className="text-sm opacity-70">Transported</div>
-              <div className="text-6xl md:text-7xl font-extrabold leading-none mt-1">{totalTransported}</div>
-            </CardBody>
-          </Card>
-        </div>
+            <Card isBlurred className="bg-surface-deep/60 border border-default-200">
+              <CardBody className="p-6">
+                <div className="text-sm opacity-70">Transported</div>
+                <div className="text-6xl md:text-7xl font-extrabold leading-none mt-1">{totalTransported}</div>
+              </CardBody>
+            </Card>
+          </div>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             <SummaryCharts
               perHourSeries={perHourSeries}
               pieSeries={pieSeries}
@@ -655,135 +655,68 @@ export default function SummaryPage() {
               THEME={THEME}
               PIE_COLORS={PIE_COLORS}
             />
-        </div>
-        {totalSessions > 0 && (
-          <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
-            <Card isBlurred className="bg-surface-deep/60 border border-default-200">
-              <CardBody className="p-6">
-                <div className="text-sm opacity-70">Active Sessions</div>
-                <div className="text-4xl md:text-5xl font-extrabold leading-none mt-1">{totalSessions}</div>
-              </CardBody>
-            </Card>
-            
-            <Card isBlurred className="bg-surface-deep/60 border border-default-200">
-              <CardBody className="p-6">
-                <div className="text-sm opacity-70">Total Mouse Clicks</div>
-                <div className="text-4xl md:text-5xl font-extrabold leading-none mt-1">{totalMouseClicks}</div>
-              </CardBody>
-            </Card>
-
-            <Card isBlurred className="bg-surface-deep/60 border border-default-200">
-              <CardBody className="p-6">
-                <div className="text-sm opacity-70">Total Keystrokes</div>
-                <div className="text-4xl md:text-5xl font-extrabold leading-none mt-1">{totalKeyStrokes}</div>
-              </CardBody>
-            </Card>
-
-            <Card isBlurred className="bg-surface-deep/60 border border-default-200">
-              <CardBody className="p-6">
-                <div className="text-sm opacity-70">Avg Session (min)</div>
-                <div className="text-4xl md:text-5xl font-extrabold leading-none mt-1">{avgSessionDuration.toFixed(1)}</div>
-              </CardBody>
-            </Card>
           </div>
-        )}
-        {/* Data collection charts are rendered in the client-only SummaryCharts component above. */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
-          {/* Staff Logs (HeroUI) */}
-          <Card isBlurred className="bg-surface-deep/60 border border-default-200">
-            <CardBody className="p-0">
-              <div className="flex items-center justify-between px-4 py-3">
-                <div>
-                  <span className="font-semibold">Staff Logs</span>
-                  <div className="text-sm text-surface-faint">{event.staff.length} teams</div>
-                </div>
-                <div>
-                  <Button size="sm" variant="flat" onPress={() => setOpenStaff(v => !v)}>
-                    {openStaff ? 'Hide' : 'Show'}
-                  </Button>
-                </div>
-              </div>
-              {openStaff && (
-                <div className="px-4 pb-4 space-y-4">
-                  {event.staff.map((team) => (
-                    <div key={team.team} className="bg-surface-deepest rounded-lg p-3">
-                      <div className="flex items-baseline justify-between">
-                        <h4 className="font-semibold">{team.team}</h4>
-                        <div className="text-sm text-surface-faint">{(team.log || []).length} entries</div>
-                      </div>
-                      <div className="mt-2 text-sm space-y-1">
-                        {(team.log || []).map((entry, idx) => (
-                          <div key={idx}>
-                            {entry.message}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardBody>
-          </Card>
-
-          {/* Call Logs (HeroUI) */}
-          <Card isBlurred className="bg-surface-deep/60 border border-default-200">
-            <CardBody className="p-0">
-              <div className="flex items-center justify-between px-4 py-3">
-                <div>
-                  <span className="font-semibold">Call Logs</span>
-                  <div className="text-sm text-surface-faint">{event.calls.length} calls</div>
-                </div>
-                <div>
-                  <Button size="sm" variant="flat" onPress={() => setOpenCalls(v => !v)}>
-                    {openCalls ? 'Hide' : 'Show'}
-                  </Button>
-                </div>
-              </div>
-              {openCalls && (
-                <div className="px-4 pb-4 space-y-4">
-                  {event.calls.map((call) => (
-                    <div key={call.id} className="bg-surface-deepest rounded-lg p-3">
-                      <div className="flex items-baseline justify-between">
-                        <div className="font-semibold">Call #{getChronologicalCallNumber(call)} — {call.chiefComplaint}</div>
-                        <div className="text-sm text-surface-faint">{call.location || 'No location'}</div>
-                      </div>
-                      <div className="mt-2 text-sm space-y-1">
-                        {(call.log || []).map((entry, idx) => (
-                          <div key={idx}>
-                            {entry.message}
-                          </div>
-                        ))}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </CardBody>
-          </Card>
-          {/* NEW: Data Collection Details */}
           {totalSessions > 0 && (
+            <div className="grid grid-cols-1 sm:grid-cols-4 gap-4">
+              <Card isBlurred className="bg-surface-deep/60 border border-default-200">
+                <CardBody className="p-6">
+                  <div className="text-sm opacity-70">Active Sessions</div>
+                  <div className="text-4xl md:text-5xl font-extrabold leading-none mt-1">{totalSessions}</div>
+                </CardBody>
+              </Card>
+
+              <Card isBlurred className="bg-surface-deep/60 border border-default-200">
+                <CardBody className="p-6">
+                  <div className="text-sm opacity-70">Total Mouse Clicks</div>
+                  <div className="text-4xl md:text-5xl font-extrabold leading-none mt-1">{totalMouseClicks}</div>
+                </CardBody>
+              </Card>
+
+              <Card isBlurred className="bg-surface-deep/60 border border-default-200">
+                <CardBody className="p-6">
+                  <div className="text-sm opacity-70">Total Keystrokes</div>
+                  <div className="text-4xl md:text-5xl font-extrabold leading-none mt-1">{totalKeyStrokes}</div>
+                </CardBody>
+              </Card>
+
+              <Card isBlurred className="bg-surface-deep/60 border border-default-200">
+                <CardBody className="p-6">
+                  <div className="text-sm opacity-70">Avg Session (min)</div>
+                  <div className="text-4xl md:text-5xl font-extrabold leading-none mt-1">{avgSessionDuration.toFixed(1)}</div>
+                </CardBody>
+              </Card>
+            </div>
+          )}
+          {/* Data collection charts are rendered in the client-only SummaryCharts component above. */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+            {/* Staff Logs (HeroUI) */}
             <Card isBlurred className="bg-surface-deep/60 border border-default-200">
               <CardBody className="p-0">
-                <button
-                  onClick={() => setOpenDataCollection(v => !v)}
-                  className="w-full flex items-center justify-between px-4 py-3 rounded-2xl hover:bg-surface-deepest/50 transition"
-                >
-                  <span className="font-semibold">Data Collection Sessions</span>
-                  <span className="text-xl">{openDataCollection ? '▾' : '▸'}</span>
-                </button>
-                {openDataCollection && (
-                  <div className="px-4 pb-4">
-                    {interactionSessions.map((session) => (
-                      <div key={session.sessionId} className="mb-4 p-3 bg-surface-deepest rounded-lg">
-                        <h4 className="font-semibold mb-2">Session {session.sessionId}</h4>
-                        <div className="text-sm space-y-1">
-                          <p><strong>Started:</strong> {formatTimestamp(session.startTime)}</p>
-                          {session.endTime && <p><strong>Ended:</strong> {formatTimestamp(session.endTime)}</p>}
-                          <p><strong>Duration:</strong> {((session.endTime || Date.now()) - session.startTime) / 1000 / 60} minutes</p>
-                          <p><strong>Mouse Clicks:</strong> {session.mouseClicks.length}</p>
-                          <p><strong>Keystrokes:</strong> {session.keyStrokes.length}</p>
-                          <p><strong>Clicks/min:</strong> {(session.mouseClicks.length / (((session.endTime || Date.now()) - session.startTime) / 1000 / 60)).toFixed(2)}</p>
-                          <p><strong>Keys/min:</strong> {(session.keyStrokes.length / (((session.endTime || Date.now()) - session.startTime) / 1000 / 60)).toFixed(2)}</p>
+                <div className="flex items-center justify-between px-4 py-3">
+                  <div>
+                    <span className="font-semibold">Staff Logs</span>
+                    <div className="text-sm text-surface-faint">{event.staff.length} teams</div>
+                  </div>
+                  <div>
+                    <Button size="sm" variant="flat" onPress={() => setOpenStaff(v => !v)}>
+                      {openStaff ? 'Hide' : 'Show'}
+                    </Button>
+                  </div>
+                </div>
+                {openStaff && (
+                  <div className="px-4 pb-4 space-y-4">
+                    {event.staff.map((team) => (
+                      <div key={team.team} className="bg-surface-deepest rounded-lg p-3">
+                        <div className="flex items-baseline justify-between">
+                          <h4 className="font-semibold">{team.team}</h4>
+                          <div className="text-sm text-surface-faint">{(team.log || []).length} entries</div>
+                        </div>
+                        <div className="mt-2 text-sm space-y-1">
+                          {(team.log || []).map((entry, idx) => (
+                            <div key={idx}>
+                              {entry.message}
+                            </div>
+                          ))}
                         </div>
                       </div>
                     ))}
@@ -791,9 +724,77 @@ export default function SummaryPage() {
                 )}
               </CardBody>
             </Card>
-          )}
+
+            {/* Call Logs (HeroUI) */}
+            <Card isBlurred className="bg-surface-deep/60 border border-default-200">
+              <CardBody className="p-0">
+                <div className="flex items-center justify-between px-4 py-3">
+                  <div>
+                    <span className="font-semibold">Call Logs</span>
+                    <div className="text-sm text-surface-faint">{event.calls.length} calls</div>
+                  </div>
+                  <div>
+                    <Button size="sm" variant="flat" onPress={() => setOpenCalls(v => !v)}>
+                      {openCalls ? 'Hide' : 'Show'}
+                    </Button>
+                  </div>
+                </div>
+                {openCalls && (
+                  <div className="px-4 pb-4 space-y-4">
+                    {event.calls.map((call) => (
+                      <div key={call.id} className="bg-surface-deepest rounded-lg p-3">
+                        <div className="flex items-baseline justify-between">
+                          <div className="font-semibold">Call #{getChronologicalCallNumber(call)} — {call.chiefComplaint}</div>
+                          <div className="text-sm text-surface-faint">{call.location || 'No location'}</div>
+                        </div>
+                        <div className="mt-2 text-sm space-y-1">
+                          {(call.log || []).map((entry, idx) => (
+                            <div key={idx}>
+                              {entry.message}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardBody>
+            </Card>
+            {/* NEW: Data Collection Details */}
+            {totalSessions > 0 && (
+              <Card isBlurred className="bg-surface-deep/60 border border-default-200">
+                <CardBody className="p-0">
+                  <button
+                    onClick={() => setOpenDataCollection(v => !v)}
+                    className="w-full flex items-center justify-between px-4 py-3 rounded-2xl hover:bg-surface-deepest/50 transition"
+                  >
+                    <span className="font-semibold">Data Collection Sessions</span>
+                    <span className="text-xl">{openDataCollection ? '▾' : '▸'}</span>
+                  </button>
+                  {openDataCollection && (
+                    <div className="px-4 pb-4">
+                      {interactionSessions.map((session) => (
+                        <div key={session.sessionId} className="mb-4 p-3 bg-surface-deepest rounded-lg">
+                          <h4 className="font-semibold mb-2">Session {session.sessionId}</h4>
+                          <div className="text-sm space-y-1">
+                            <p><strong>Started:</strong> {formatTimestamp(session.startTime)}</p>
+                            {session.endTime && <p><strong>Ended:</strong> {formatTimestamp(session.endTime)}</p>}
+                            <p><strong>Duration:</strong> {((session.endTime || Date.now()) - session.startTime) / 1000 / 60} minutes</p>
+                            <p><strong>Mouse Clicks:</strong> {session.mouseClicks.length}</p>
+                            <p><strong>Keystrokes:</strong> {session.keyStrokes.length}</p>
+                            <p><strong>Clicks/min:</strong> {(session.mouseClicks.length / (((session.endTime || Date.now()) - session.startTime) / 1000 / 60)).toFixed(2)}</p>
+                            <p><strong>Keys/min:</strong> {(session.keyStrokes.length / (((session.endTime || Date.now()) - session.startTime) / 1000 / 60)).toFixed(2)}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </CardBody>
+              </Card>
+            )}
+          </div>
         </div>
       </div>
-      </div>
     </main>
-  );}
+  );
+}
