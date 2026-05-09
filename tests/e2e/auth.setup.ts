@@ -33,10 +33,10 @@ setup('authenticate and save storage state', async ({ page }) => {
   await page.getByLabel('Password').fill(password);
 
   // The submit button inside the modal says "Login" (loginmodal.tsx line 234)
-  await page.getByRole('button', { name: 'Login', exact: true }).click();
+  await page.getByRole('button', { name: 'Login' }).click();
 
   // Wait for the modal to close — loginmodal.tsx calls onClose() after successful login
-  await expect(page.getByRole('dialog')).not.toBeVisible({ timeout: 15_000 });
+  await expect(page.getByRole('dialog', { name: "Login" })).not.toBeVisible({ timeout: 15_000 });
 
   // Verify the ccad_auth cookie was set by useauth.ts
   await expect(async () => {

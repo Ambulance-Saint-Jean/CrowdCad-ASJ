@@ -285,21 +285,12 @@ export default function SummaryPage() {
   const totalTransported =
     event.calls.filter(c => c.outcome === 'Rolled from Clinic' || c.status === 'Rolled from Scene').length;
 
-  // const respStats = computeResponseTimeStats(event as Event); // assert non-null
-  // const avgResp = msToMinSec(respStats.averageMs);
-
 
   const formatTimestamp = (timestamp: number) => {
     // Check if this looks like elapsed seconds (< 86400 = 24 hours in seconds)
     // if (timestamp < 86400) {
     // This is elapsed seconds with 2 decimal places for milliseconds
     return timestamp.toFixed(2);
-    // } 
-    // else {
-    //   // This is a Unix timestamp in milliseconds, format as date/time
-    //   const date = new Date(timestamp);
-    //   return `${date.toLocaleDateString()} ${date.toLocaleTimeString()}`;
-    // }
   };
 
   // Utility to generate full log text for CSV

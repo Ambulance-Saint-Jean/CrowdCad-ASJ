@@ -302,6 +302,7 @@ export default function CallTrackingCard({
                   <Dropdown placement="bottom-end" offset={2}>
                     <DropdownTrigger>
                       <button
+                        data-testid={`team-status-btn-${team}`}
                         onClick={(e) => {
                           e.stopPropagation();
                         }}

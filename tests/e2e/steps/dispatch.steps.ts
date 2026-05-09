@@ -44,9 +44,6 @@ When('I log a call with location {string}, complaint {string} and priority {stri
   scenarioState.loggedCallLocation = location;
   const dialog = page.getByRole('dialog');
 
-  // await dialog.getByRole('button', { name: 'Priority' }).click();
-  // await dialog.getByRole('menuitem', { name: new RegExp(priority.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')), exact: false }).click();
-  // await dialog.getByText('P1 - High').click(); // , { exact: true }
   await dialog.locator('[aria-label="Priority"]').click();
   await page.locator('[role="listbox"]').getByText(priority, { exact: true }).click();
 
@@ -95,9 +92,12 @@ Then('the team {string} should have status {string}', async ({ page }, teamName:
 
 // Call with team assignment
 
-When('I log a call assigned to team {string} at location {string} with complaint {string}', async ({ page, scenarioState }, teamName: string, location: string, complaint: string) => {
+When('I log a call assigned to team {string} at location {string} with complaint {string} and priority {string}', async ({ page, scenarioState }, teamName: string, location: string, complaint: string, priority: string) => {
   scenarioState.loggedCallLocation = location;
   const dialog = page.getByRole('dialog');
+
+  await dialog.locator('[aria-label="Priority"]').click();
+  await page.locator('[role="listbox"]').getByText(priority).click();
   await dialog.getByLabel('Location').fill(location);
   await dialog.getByLabel('Chief Complaint').fill(complaint);
   await dialog.locator('[aria-label="Assign Team"]').click();
@@ -181,8 +181,15 @@ Then('the supervisor {string} should appear in the supervisors list', async ({ p
 // Team status changes within a call
 
 When('I change team {string} status on the call to {string}', async ({ page }, teamName: string, newStatus: string) => {
-  await page.getByTestId(`team-chip-${teamName}`).locator('button').first().click();
-  await page.getByRole('menuitem', { name: newStatus }).click();
+  await page.getByTestId(`team-chip-${teamName}`).waitFor({ state: 'visible', timeout: 10_000 });
+
+  await expect(async () => {
+    await page.getByTestId(`team-status-btn-${teamName}`).click();
+    await page.waitForSelector(`[role="menuitem"][data-key="${newStatus}"]`, { timeout: 5_000 });
+    await page.locator(`[role="menuitem"][data-key="${newStatus}"]`).click({ force: true });
+  }).toPass({ timeout: 20_000 });
+
+  await page.waitForSelector(`[role="menuitem"][data-key="${newStatus}"]`, { state: 'hidden', timeout: 5_000 });
 });
 
 // End event Continue button state

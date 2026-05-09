@@ -35,7 +35,7 @@ Feature: Dispatch board
     When I open the add team modal
     And I create a team named "Bravo" with a member "Jane Smith" certified as "FR"
     And I open the quick call modal
-    And I log a call assigned to team "Bravo" at location "Main Stage" with complaint "Chest Pain"
+    And I log a call assigned to team "Bravo" at location "Main Stage" with complaint "Chest Pain" and priority "P2 - Medium"
     Then the call should appear in the call list
     And the team "Bravo" should have status "En Route"
 
@@ -75,7 +75,7 @@ Feature: Dispatch board
     When I open the add team modal
     And I create a team named "Echo" with a member "Sam Lee" certified as "FA"
     And I open the quick call modal
-    And I log a call assigned to team "Echo" at location "South Gate" with complaint "Fall"
+    And I log a call assigned to team "Echo" at location "South Gate" with complaint "Fall" and priority "P1 - High"
     Then the team "Echo" should have status "En Route"
     When I change team "Echo" status on the call to "On Scene"
     Then the team "Echo" should have status "On Scene"
@@ -84,7 +84,7 @@ Feature: Dispatch board
     When I open the add team modal
     And I create a team named "Delta" with a member "Chris Roy" certified as "FR"
     And I open the quick call modal
-    And I log a call assigned to team "Delta" at location "North Entrance" with complaint "Headache"
+    And I log a call assigned to team "Delta" at location "North Entrance" with complaint "Headache" and priority "P3 - Low"
     Then the team "Delta" should have status "En Route"
     When I change team "Delta" status on the call to "Refusal"
     Then the team "Delta" should have status "Available"
@@ -93,7 +93,7 @@ Feature: Dispatch board
     When I open the add team modal
     And I create a team named "Foxtrot" with a member "Dana Kim" certified as "FR"
     And I open the quick call modal
-    And I log a call assigned to team "Foxtrot" at location "Medical Tent" with complaint "Seizure"
+    And I log a call assigned to team "Foxtrot" at location "Medical Tent" with complaint "Seizure" and priority "P1"
     Then the team "Foxtrot" should have status "En Route"
     When I change team "Foxtrot" status on the call to "Transporting"
     Then the team "Foxtrot" should have status "Transporting"
@@ -104,7 +104,7 @@ Feature: Dispatch board
     When I open the add team modal
     And I create a team named "Golf" with a member "Pat Chen" certified as "FA"
     And I open the quick call modal
-    And I log a call assigned to team "Golf" at location "East Gate" with complaint "Nausea"
+    And I log a call assigned to team "Golf" at location "East Gate" with complaint "Nausea" and priority "P3"
     Then the team "Golf" should have status "En Route"
     When I change team "Golf" status on the call to "NMM"
     Then the team "Golf" should have status "Available"

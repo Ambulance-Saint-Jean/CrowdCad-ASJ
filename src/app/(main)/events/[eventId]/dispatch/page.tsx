@@ -993,16 +993,9 @@ export default function DispatchPage({ params }: DispatchPageProps) {
       }
 
       // Optimistically update local state so the UI reflects the change immediately
-      setEvent(prev => prev ? { ...prev, eventEquipment: updatedEventEquipment } as Event : prev);
+      setEvent(prev => prev ? new Event({ ...prev, eventEquipment: updatedEventEquipment }) : prev);
 
       await updateEvent({ eventEquipment: updatedEventEquipment });
-
-      // event.addEventEquipment(new EventEquipment(equipmentName, newStatus))
-
-      // // Optimistically update local state so the UI reflects the change immediately
-      // setEvent(prev => prev ? event : prev);
-
-      // await updateEvent({ eventEquipment: event.eventEquipment });
     } catch (error) {
       console.error('Error updating equipment status:', error);
       toast.error('Failed to update equipment status');
@@ -1491,7 +1484,7 @@ export default function DispatchPage({ params }: DispatchPageProps) {
               call.priority = Priority.create(call.priority);
               return call
             })
-            return eventData;
+            return new Event({ ...eventData });
           }
           return prev;
         });

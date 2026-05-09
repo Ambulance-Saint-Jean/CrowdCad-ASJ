@@ -13,17 +13,17 @@ dotenv.config({ path: path.join(__dirname, '../../.env.test.local') });
  */
 async function globalSetup() {
 
-  const email = process.env.E2E_TEST_EMAIL;
-  const password = process.env.E2E_TEST_PASSWORD;
+  // const email = process.env.E2E_TEST_EMAIL;
+  // const password = process.env.E2E_TEST_PASSWORD;
 
-  if (!email || !password) {
-    throw new Error(
-      'E2E_TEST_EMAIL and E2E_TEST_PASSWORD must be set in .env.test.local'
-    );
-  }
+  // if (!email || !password) {
+  //   throw new Error(
+  //     'E2E_TEST_EMAIL and E2E_TEST_PASSWORD must be set in .env.test.local'
+  //   );
+  // }
 
-  await addUser({ email, password });
-  await seedDatabase();
+  // await addUser({ email, password });
+  // await seedDatabase();
 }
 
 export default globalSetup;

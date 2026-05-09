@@ -72,7 +72,6 @@ export default function ClinicTrackingTable({
   const [isPriorityUpdating, setIsPriorityUpdating] = React.useState<Record<string, boolean>>({});
   const [sortPriorityDirectionAsc, setSortPriorityDirectionAsc] = React.useState<boolean>(false);
 
-
   // Sync notes from props when not focused
   React.useEffect(() => {
     if (!event?.calls) return;

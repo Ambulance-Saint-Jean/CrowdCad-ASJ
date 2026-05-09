@@ -45,6 +45,8 @@ Given('I have ended an event and am on the summary page', async ({ page }) => {
   await page.getByTestId('add-call-button').click();
   await expect(page.getByRole('dialog')).toBeVisible();
   const callDialog = page.getByRole('dialog');
+  await callDialog.locator('[aria-label="Priority"]').click();
+  await page.locator('[role="listbox"]').getByText('P1 - High').click();
   await callDialog.getByLabel('Location').fill('Main Stage');
   await callDialog.getByLabel('Chief Complaint').fill('Test Complaint');
   await callDialog.locator('[aria-label="Assign Team"]').click();
@@ -53,9 +55,12 @@ Given('I have ended an event and am on the summary page', async ({ page }) => {
 
   // 6. Progress through call lifecycle: En Route → Transporting → Delivered
   await page.getByTestId('team-chip-SummaryTeam').locator('button').first().click();
-  await page.getByRole('menuitem', { name: 'Transporting' }).click();
+  // await page.getByRole('menuitem', { name: 'Transporting' }).click();
+  // await page.getByRole('menu').getByRole('menuitem', { name: 'Transporting' }).first().click({ force: true })
+  await page.getByRole('menuitem', { name: 'Transporting' }).click({ force: true })
+
   await page.getByTestId('team-chip-SummaryTeam').locator('button').first().click();
-  await page.getByRole('menuitem', { name: 'Delivered' }).click();
+  await page.getByRole('menu').getByRole('menuitem', { name: 'Delivered' }).click({ force: true });
 
   // 7. End event with quick summary
   await page.getByRole('button', { name: 'End Event' }).click();

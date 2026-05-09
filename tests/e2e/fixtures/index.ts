@@ -23,7 +23,7 @@ export const test = base.extend<Fixtures>({
   venueSelectionPage: async ({ page }, use) => {
     await use(new VenueSelectionPage(page)); // NOSONAR — `use` is a Playwright fixture callback, not a React hook
   },
-  scenarioState: async ({}, use) => {
+  scenarioState: async ({ }, use) => {
     await use({}); // NOSONAR — `use` is a Playwright fixture callback, not a React hook
   },
 });

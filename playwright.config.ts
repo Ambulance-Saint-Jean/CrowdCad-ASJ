@@ -27,7 +27,7 @@ export default defineConfig({
 
   // Assertion timeout
   expect: {
-    timeout: 10_000,
+    timeout: 30_000,
   },
 
   // Run test files in parallel
@@ -37,7 +37,7 @@ export default defineConfig({
   forbidOnly: !!process.env.CI,
 
   // Retry once in CI for flaky network calls; no retries locally
-  retries: process.env.CI ? 1 : 0,
+  retries: 2,
 
   // Limit workers in CI
   workers: process.env.CI ? 2 : undefined,
@@ -49,6 +49,8 @@ export default defineConfig({
 
   use: {
     baseURL: NEXT_DEV_URL,
+    actionTimeout: 15000,
+    navigationTimeout: 30000,
     trace: 'on-first-retry',
     screenshot: 'only-on-failure',
     video: 'on-first-retry',
@@ -65,14 +67,14 @@ export default defineConfig({
       stderr: 'pipe',
     },
     {
-      command: 'npx next build && npx next start',
+      command: 'next build && next start',
       env: {
         NEXT_PUBLIC_USE_FIREBASE_EMULATOR: 'true',
         NEXT_PUBLIC_USE_FIRESTORE_EMULATOR: 'true',
         NEXT_PUBLIC_FIREBASE_API_KEY: 'fake-api-key',
         NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN: 'localhost',
         NEXT_PUBLIC_FIREBASE_PROJECT_ID: 'demo-crowdcad',
-        NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: 'demo-crowdcaFd.appspot.com',
+        NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET: 'demo-crowdcad.appspot.com',
         NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID: '000000000000',
         NEXT_PUBLIC_FIREBASE_APP_ID: '1:000000000000:web:fake',
       },

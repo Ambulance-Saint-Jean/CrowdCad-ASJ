@@ -460,6 +460,7 @@ export const CallTrackingTable: React.FC<CallTrackingTableProps> = ({
                                           size="sm"
                                           variant="light"
                                           className="min-w-0 h-6 px-2 text-xs"
+                                          data-testid={`team-status-btn-${team}`}
                                         >
                                           {teamStatusMap[call.id]?.[team] || event?.staff.find(s => s.team === team)?.status || 'En Route'}
                                         </Button>
