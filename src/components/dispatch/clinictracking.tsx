@@ -269,6 +269,7 @@ export default function ClinicTrackingTable({
                           size="sm"
                           variant="flat"
                           className="min-w-0 h-7 px-2 text-xs justify-start bg-surface-liner hover:bg-surface-muted"
+                          data-testid="clinic-status-button"
                         >
                           {call.outcome || 'In Clinic'}
                         </Button>

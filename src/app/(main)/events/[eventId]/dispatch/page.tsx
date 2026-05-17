@@ -2961,16 +2961,17 @@ export default function DispatchPage({ params }: DispatchPageProps) {
                         setSelectedLeftTab(selected);
                       }}
                       aria-label="Select section"
-                      className="max-w-[140px]"
+                      data-testid="section-select"
+                      className="w-auto min-w-[180px]"
                       classNames={{
-                        trigger: "bg-surface-deep hover:bg-surface-liner h-10 min-h-10",
-                        value: "text-surface-lightest",
+                        trigger: "bg-surface-deep border border-surface-liner rounded-full hover:bg-surface-liner h-10 min-h-10",
+                        value: "text-surface-light",
                         popoverContent: "bg-surface-deep border-surface-liner",
                       }}
                     >
-                      <SelectItem key="teams">Teams</SelectItem>
-                      <SelectItem key="supervisors">Supervisors</SelectItem>
-                      <SelectItem key="equipment">Equipment</SelectItem>
+                      <SelectItem key="teams" data-testid="section-option-teams">Teams</SelectItem>
+                      <SelectItem key="supervisors" data-testid="section-option-supervisors">Supervisors</SelectItem>
+                      <SelectItem key="equipment" data-testid="section-option-equipment">Equipment</SelectItem>
                     </Select>
 
 
@@ -3008,8 +3009,8 @@ export default function DispatchPage({ params }: DispatchPageProps) {
                                 }
                               }}
                             >
-                              <DropdownItem key="team">Add Team</DropdownItem>
-                              <DropdownItem key="supervisor">Add Supervisor</DropdownItem>
+                              <DropdownItem key="team" data-testid="add-team-menuitem">Add Team</DropdownItem>
+                              <DropdownItem key="supervisor" data-testid="add-supervisor-menuitem">Add Supervisor</DropdownItem>
                             </DropdownMenu>
                           </Dropdown>
                         </div>

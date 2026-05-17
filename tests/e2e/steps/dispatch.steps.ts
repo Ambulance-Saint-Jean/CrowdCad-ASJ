@@ -55,9 +55,8 @@ Then('the call should appear in the call list', async ({ page, scenarioState }) 
 // Team management
 
 When('I open the add team modal', async ({ page }) => {
-  // Two buttons share this aria-label (condensed header + Staff tab); .first() picks either
-  await page.getByRole('button', { name: 'Add Team or Supervisor' }).first().click();
-  await page.getByRole('menuitem', { name: 'Add Team' }).click();
+  await page.getByTestId('add-team-supervisor-dropdown').first().click();
+  await page.getByTestId('add-team-menuitem').click();
   await expect(page.getByRole('dialog')).toBeVisible();
 });
 
@@ -144,16 +143,17 @@ When('I switch to the {string} section', async ({ page }, section: string) => {
     }
     // else: desktop layout — section is always visible without a tab to click
   } else {
-    await page.locator('[aria-label="Select section"]').click();
-    await page.getByRole('option', { name: section }).click();
+    const trigger = page.getByTestId('section-select').locator('button').first();
+    await trigger.click();
+    await page.getByTestId(`section-option-${section.toLowerCase()}`).click();
   }
 });
 
 // Supervisor management
 
 When('I open the add supervisor modal', async ({ page }) => {
-  await page.getByRole('button', { name: 'Add Team or Supervisor' }).first().click();
-  await page.getByRole('menuitem', { name: 'Add Supervisor' }).click();
+  await page.getByTestId('add-team-supervisor-dropdown').first().click();
+  await page.getByTestId('add-supervisor-menuitem').click();
   await expect(page.getByRole('dialog')).toBeVisible();
 });
 
@@ -174,7 +174,7 @@ Then('the supervisor {string} should appear in the supervisors list', async ({ p
 // Team status changes within a call
 
 When('I change team {string} status on the call to {string}', async ({ page }, teamName: string, newStatus: string) => {
-  await page.getByTestId(`team-chip-${teamName}`).locator('button').first().click();
+  await page.getByTestId(`team-status-button-${teamName}`).click();
   await page.getByRole('menuitem', { name: newStatus }).click();
 });
 

@@ -189,6 +189,7 @@ export default function CallTrackingCard({
                 <button
                   className="p-0 m-0 border-0 bg-transparent text-surface-light hover:text-status-blue transition-colors cursor-pointer flex items-center justify-center"
                   aria-label="Call actions"
+                  data-testid={`call-actions-button-${call.id}`}
                   type="button"
                 >
                   <MoreVertical className="h-4 w-4" />
@@ -197,24 +198,28 @@ export default function CallTrackingCard({
               <DropdownMenu aria-label="Call actions">
                 <DropdownItem 
                   key="showLog"
+                  data-testid={`call-show-log-${call.id}`}
                   onPress={() => setExpanded(v => !v)}
                 >
                   {expanded ? 'Hide Log' : 'Show Log'}
                 </DropdownItem>
                 <DropdownItem 
                   key="duplicate"
+                  data-testid={`call-duplicate-${call.id}`}
                   onPress={() => handleMarkDuplicate(call.id)}
                 >
                   Mark as Duplicate
                 </DropdownItem>
                 <DropdownItem 
                   key="priority"
+                  data-testid={`call-priority-${call.id}`}
                   onPress={() => handleTogglePriority(call.id)}
                 >
                   {call.priority ? 'Remove Priority' : 'Mark as Priority'}
                 </DropdownItem>
                 <DropdownItem 
                   key="delete"
+                  data-testid={`call-delete-${call.id}`}
                   className="text-danger"
                   color="danger"
                   onPress={() => {
@@ -338,6 +343,7 @@ export default function CallTrackingCard({
                           e.stopPropagation();
                         }}
                         className="text-xs text-surface-faint hover:text-surface-light transition-colors"
+                        data-testid={`team-status-button-${team}`}
                       >
                         {currentStatus} ▼
                       </button>
